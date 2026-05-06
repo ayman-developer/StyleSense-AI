@@ -1,5 +1,5 @@
 -- =============================================
--- StyleSense AI — Full Schema
+-- StyleSense AI — Full Schema (Updated)
 -- Run this in Supabase SQL Editor
 -- =============================================
 
@@ -26,20 +26,30 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 ALTER TABLE user_preferences DISABLE ROW LEVEL SECURITY;
 
--- Wardrobe items
+-- Wardrobe items (updated with new columns)
 CREATE TABLE IF NOT EXISTS wardrobe_items (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id TEXT NOT NULL,
+  name TEXT,
   image_url TEXT,
   cloudinary_public_id TEXT,
   category TEXT,
   color TEXT,
-  season TEXT,
+  fabric TEXT,
+  fit TEXT,
+  warmth_level TEXT,
+  season TEXT[],
   occasion_tags TEXT[],
   times_worn INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ALTER TABLE wardrobe_items DISABLE ROW LEVEL SECURITY;
+
+-- Add new columns if table already exists
+ALTER TABLE wardrobe_items ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE wardrobe_items ADD COLUMN IF NOT EXISTS fabric TEXT;
+ALTER TABLE wardrobe_items ADD COLUMN IF NOT EXISTS warmth_level TEXT;
+ALTER TABLE wardrobe_items ADD COLUMN IF NOT EXISTS fit TEXT;
 
 -- AI outfit suggestions
 CREATE TABLE IF NOT EXISTS outfit_suggestions (
@@ -106,3 +116,13 @@ CREATE TABLE IF NOT EXISTS ootd_comments (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ALTER TABLE ootd_comments DISABLE ROW LEVEL SECURITY;
+
+-- Wardrobe Analysis (stores AI analysis results)
+CREATE TABLE IF NOT EXISTS wardrobe_analysis (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT UNIQUE NOT NULL,
+  analysis JSONB,
+  weather_snapshot JSONB,
+  analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE wardrobe_analysis DISABLE ROW LEVEL SECURITY;

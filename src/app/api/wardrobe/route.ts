@@ -23,14 +23,21 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const item = await request.json();
-    const { user_id, image_url, cloudinary_public_id, category, color, season, occasion_tags } = item;
+    const { 
+      user_id, image_url, cloudinary_public_id, category, color, 
+      season, occasion_tags, name, fabric, fit, warmth_level 
+    } = item;
+
     if (!user_id || !image_url || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     const { data, error } = await supabaseAdmin
       .from("wardrobe_items")
-      .insert([{ user_id, image_url, cloudinary_public_id, category, color, season, occasion_tags }])
+      .insert([{ 
+        user_id, image_url, cloudinary_public_id, category, color, 
+        season, occasion_tags, name, fabric, fit, warmth_level 
+      }])
       .select().single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
