@@ -1,123 +1,96 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { auth, googleProvider } from "@/lib/firebase";
-import {
-  signInWithPopup,
-  onAuthStateChanged,
-  GoogleAuthProvider
-} from "firebase/auth";
-import { Button } from "@/components/ui/button";
-import { LogIn, Loader2 } from "lucide-react";
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup } from 'firebase/auth'
+import { auth } from '@/lib/firebase'
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [initializing, setInitializing] = useState(true);
-  const [signingIn, setSigningIn] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter()
+  const [ready, setReady] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    // Timeout safety — if Firebase doesn't respond in 4 seconds, show login UI
-    const timeout = setTimeout(() => {
-      console.warn("Firebase Auth initialization timed out. Showing login UI.");
-      setInitializing(false);
-    }, 4000);
+    // Hard timeout — show login button after 3 seconds NO MATTER WHAT
+    const timer = setTimeout(() => setReady(true), 3000)
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      clearTimeout(timeout);
+    const unsub = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timer)
       if (user) {
-        router.push("/dashboard");
+        router.replace('/dashboard')
       } else {
-        setInitializing(false); // Show login button
+        setReady(true)
       }
-    }, (err) => {
-      console.error("Auth state listener error:", err);
-      clearTimeout(timeout);
-      setInitializing(false);
-    });
+    })
 
     return () => {
-      unsubscribe();
-      clearTimeout(timeout);
-    };
-  }, [router]);
-
-  const handleGoogleLogin = async () => {
-    setSigningIn(true);
-    setError(null);
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
-      
-      if (result?.user) {
-        const syncRes = await fetch("/api/auth/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            firebase_uid: result.user.uid,
-            name: result.user.displayName,
-            email: result.user.email,
-            avatar_url: result.user.photoURL,
-          }),
-        });
-        
-        if (syncRes.ok) {
-          router.push("/dashboard");
-        } else {
-          throw new Error("Failed to sync account with StyleSense AI");
-        }
-      }
-    } catch (err: any) {
-      console.error("Google login error:", err);
-      setError(err.message || "Login failed. Please try again.");
-      setSigningIn(false);
+      clearTimeout(timer)
+      unsub()
     }
-  };
+  }, [router])
 
-  if (initializing) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
-        <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
-        <p className="text-zinc-400 animate-pulse">Initializing StyleSense AI...</p>
-      </div>
-    );
+  const login = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+      const result = await signInWithPopup(auth, provider)
+      const user = result.user
+      await fetch('/api/auth/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firebase_uid: user.uid,
+          name: user.displayName,
+          email: user.email,
+          avatar_url: user.photoURL,
+        }),
+      })
+      router.replace('/dashboard')
+    } catch (err: any) {
+      setError(err?.message || 'Login failed. Try again.')
+      setLoading(false)
+    }
   }
 
+  // Show spinner while initializing (max 3 seconds)
+  if (!ready) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-purple-500 mb-4" />
+        <p className="text-gray-400 text-sm">Initializing StyleSense AI...</p>
+      </div>
+    )
+  }
+
+  // Show login UI after ready
   return (
-    <div className="flex items-center justify-center min-h-screen bg-black/95 text-white p-4">
-      <div className="p-8 space-y-6 bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-800 text-center max-w-sm w-full animate-in fade-in zoom-in duration-500">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
-            StyleSense AI
-          </h1>
-          <p className="text-zinc-400">Your Personal AI Stylist</p>
-        </div>
-        
+    <div className="flex items-center justify-center min-h-screen bg-black">
+      <div className="bg-zinc-900 rounded-2xl p-8 w-full max-w-sm text-center shadow-xl">
+        <h1 className="text-3xl font-bold text-purple-500 mb-2">StyleSense AI</h1>
+        <p className="text-gray-400 mb-6 text-sm">Sign in to your AI stylist</p>
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 p-3 rounded-lg text-red-500 text-sm">
-            {error}
-          </div>
+          <p className="text-red-400 text-xs mb-4 bg-red-950 px-3 py-2 rounded-lg">{error}</p>
         )}
-
-        <Button 
-          onClick={handleGoogleLogin}
-          disabled={signingIn}
-          className="w-full bg-white text-black hover:bg-zinc-200 transition-all py-6 text-lg font-bold rounded-xl shadow-lg hover:shadow-white/10 active:scale-95"
+        <button
+          onClick={login}
+          disabled={loading}
+          className="w-full bg-white text-black font-semibold py-3 rounded-xl 
+                     hover:bg-gray-100 transition disabled:opacity-50 
+                     disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          {signingIn ? (
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          {loading ? (
+            <>
+              <div className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full" />
+              Opening Google...
+            </>
           ) : (
-            <LogIn className="mr-2 h-5 w-5" />
+            '→ Continue with Google'
           )}
-          {signingIn ? "Opening Google..." : "Continue with Google"}
-        </Button>
-
-        <p className="text-xs text-zinc-500 pt-4">
-          By continuing, you agree to StyleSense AI&apos;s Terms of Service and Privacy Policy.
-        </p>
+        </button>
       </div>
     </div>
-  );
+  )
 }
