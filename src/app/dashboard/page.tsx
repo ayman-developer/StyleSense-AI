@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import {
-  Cloud, CloudRain, Sun, Wind, Droplets, MapPin,
-  Loader2, Sparkles, ThumbsUp, ThumbsDown, AlertCircle, 
-  Thermometer, Zap, ArrowRight, ShoppingBag, TrendingUp, 
-  CheckCircle2, Sunrise, Sunset, Search, RefreshCcw, Calendar
+  MapPin, Loader2, Sparkles, ThumbsUp, ThumbsDown, AlertCircle, 
+  Droplets, Wind, Sunrise, Sunset, Search, RefreshCcw, Calendar,
+  ArrowRight, Zap, CheckCircle2
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -39,31 +38,25 @@ const FEMALE_OCCASIONS = ["Casual", "Office", "Formal", "Party", "Date Night", "
 export default function Dashboard() {
   const { user } = useAuth();
   
-  // Dashboard State
   const [gender, setGender] = useState<'male' | 'female'>('male');
   const [weather, setWeather] = useState<Weather | null>(null);
   const [forecast, setForecast] = useState<Forecast[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [showCitySearch, setShowCitySearch] = useState(false);
-  const [searchCity, setSearchCity] = useState("");
+  const [cityInput, setCityInput] = useState("");
   
   const [occasion, setOccasion] = useState("Casual");
   const [outfit, setOutfit] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
   const [outfitError, setOutfitError] = useState<string | null>(null);
   const [feedbackSent, setFeedbackSent] = useState(false);
-  
-  // Wardrobe Intelligence State
   const [analysis, setAnalysis] = useState<any>(null);
-  const [wardrobeItems, setWardrobeItems] = useState<any[]>([]);
 
-  // Initial Data Fetch
   useEffect(() => {
     if (user?.uid) {
       fetchPreferences();
       fetchAnalysis();
-      fetchWardrobe();
       autoDetectLocation();
     }
   }, [user?.uid]);
@@ -76,19 +69,6 @@ export default function Dashboard() {
     } catch (e) {}
   };
 
-  const updateGender = async (newGender: 'male' | 'female') => {
-    setGender(newGender);
-    setOccasion("Casual");
-    setOutfit(null);
-    try {
-      await fetch('/api/user/preferences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.uid, gender: newGender })
-      });
-    } catch (e) {}
-  };
-
   const fetchAnalysis = async () => {
     try {
       const res = await fetch(`/api/wardrobe/analyze/last?userId=${user?.uid}`);
@@ -96,26 +76,17 @@ export default function Dashboard() {
     } catch (e) {}
   };
 
-  const fetchWardrobe = async () => {
-    try {
-      const res = await fetch(`/api/wardrobe?userId=${user?.uid}`);
-      setWardrobeItems(await res.json());
-    } catch (e) {}
-  };
-
   const fetchWeatherData = async (lat?: number, lon?: number, city?: string) => {
     setWeatherLoading(true);
     setWeatherError(null);
     try {
-      const query = city ? `city=${city}` : `lat=${lat}&lon=${lon}`;
+      const query = city ? `city=${encodeURIComponent(city.trim())}` : `lat=${lat}&lon=${lon}`;
       
-      // Current Weather
       const weatherRes = await fetch(`/api/weather?${query}`);
       const weatherData = await weatherRes.json();
       if (!weatherRes.ok) throw new Error(weatherData.error || "Weather fetch failed");
       setWeather(weatherData);
 
-      // Forecast
       const forecastRes = await fetch(`/api/weather?${query}&forecast=true`);
       if (forecastRes.ok) setForecast(await forecastRes.json());
       
@@ -141,6 +112,23 @@ export default function Dashboard() {
     }
   };
 
+  const handleCitySearch = () => {
+    if (cityInput.trim()) fetchWeatherData(undefined, undefined, cityInput.trim());
+  };
+
+  const updateGender = async (newGender: 'male' | 'female') => {
+    setGender(newGender);
+    setOccasion("Casual");
+    setOutfit(null);
+    try {
+      await fetch('/api/user/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.uid, gender: newGender })
+      });
+    } catch (e) {}
+  };
+
   const handleGenerateOutfit = async () => {
     if (!weather) {
       setOutfitError("Please get your location weather first!");
@@ -161,94 +149,66 @@ export default function Dashboard() {
       setOutfit(data);
     } catch (err: any) {
       setOutfitError(err.message || "Something went wrong. Try again.");
-      console.error("Generate outfit error:", err);
     } finally {
       setGenerating(false);
-    }
-  };
-
-  const handleFeedback = async (feedback: "like" | "dislike") => {
-    if (!outfit || !user?.uid) return;
-    try {
-      await fetch("/api/outfit/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.uid,
-          weatherSnapshot: weather,
-          occasion,
-          suggestedOutfit: outfit,
-          feedback,
-        }),
-      });
-      setFeedbackSent(true);
-    } catch (e) {
-      console.error(e);
     }
   };
 
   const getWeatherTip = (temp: number, condition: string) => {
     const c = condition.toLowerCase();
     if (c.includes('rain')) return "🌧️ Rainy — Wear waterproof shoes, carry umbrella";
-    if (c.includes('storm')) return "⛈️ Stormy — Stay indoors if possible";
     if (temp >= 35) return "🔥 Very Hot — Wear light cotton/linen. Stay hydrated!";
-    if (temp >= 30) return "☀️ Hot & Sunny — Light breathable fabrics recommended";
     if (temp >= 25) return "🌤️ Warm — Light layers work well today";
-    if (temp >= 20) return "⛅ Pleasant — Perfect weather for any outfit";
     if (temp >= 15) return "🌥️ Cool — Add a light jacket or cardigan";
     return "🧥 Cold — Layer up with warm clothing";
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto px-4 md:px-0">
-      
-      {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-2">
-            Welcome back, {user?.displayName?.split(" ")[0] || "Stylist"}! {gender === 'male' ? '👨💼' : '👩💼'}
-          </h1>
-          <p className="text-zinc-500 text-lg font-medium">Personalized fashion intelligence for {user?.displayName?.split(" ")[0] || "Ayman"}.</p>
-        </div>
+    <div className="animate-fade-in max-w-[1200px] mx-auto">
+      <header className="mb-8">
+        <h1 className="text-3xl font-extrabold text-[#1A1A2E] mb-1">
+          Welcome back, {user?.displayName?.split(" ")[0] || "Stylist"}! {gender === 'male' ? '👨💼' : '👩💼'}
+        </h1>
+        <p className="text-[#6B7280] text-lg">Personalized fashion intelligence for you.</p>
       </header>
 
       {/* Gender Toggle */}
-      <div className="flex bg-zinc-900 border border-zinc-800 p-1 rounded-2xl w-full sm:w-80 shadow-lg">
+      <div className="flex bg-[#F3F4FF] p-1 rounded-2xl w-fit mb-8 border border-[#E2E4F0]">
         <button 
           onClick={() => updateGender('male')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${gender === 'male' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+          className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${gender === 'male' ? 'bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white shadow-md' : 'text-[#6B7280] hover:text-[#7C3AED]'}`}
         >
           👨 Male
         </button>
         <button 
           onClick={() => updateGender('female')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${gender === 'female' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+          className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${gender === 'female' ? 'bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white shadow-md' : 'text-[#6B7280] hover:text-[#7C3AED]'}`}
         >
           👩 Female
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
         {/* Left Column: Generator */}
-        <div className="lg:col-span-7 space-y-8">
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[40px] p-8 md:p-10 shadow-2xl">
-            <h2 className="text-2xl font-bold flex items-center gap-3 mb-8">
-              <Zap className="w-6 h-6 text-purple-500" />
+        <div className="space-y-6">
+          <div className="card">
+            <h2 className="text-xl font-bold flex items-center gap-3 mb-6">
+              <Zap className="w-5 h-5 text-[#7C3AED]" />
               Outfit Generator
             </h2>
 
-            <div className="space-y-8">
+            <div className="space-y-6">
               <div>
-                <p className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-4">THE OCCASION</p>
-                <div className="flex flex-wrap gap-2.5">
+                <span className="section-label">THE OCCASION</span>
+                <div className="flex flex-wrap gap-2">
                   {(gender === 'male' ? MALE_OCCASIONS : FEMALE_OCCASIONS).map((occ) => (
                     <button
                       key={occ}
                       onClick={() => setOccasion(occ)}
-                      className={`px-5 py-2.5 rounded-2xl border text-sm font-bold transition-all ${
+                      className={`px-5 py-2 rounded-full text-sm font-semibold border transition-all ${
                         occasion === occ
-                          ? "bg-white text-black border-white shadow-xl shadow-white/10"
-                          : "bg-black/40 text-zinc-400 border-zinc-800 hover:border-zinc-600"
+                          ? "bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white border-transparent shadow-sm"
+                          : "bg-[#F3F4FF] text-[#1A1A2E] border-[#E2E4F0] hover:border-[#7C3AED]"
                       }`}
                     >
                       {occ}
@@ -257,245 +217,184 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {outfitError && (
-                <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
-                  <AlertCircle className="w-5 h-5" /> {outfitError}
-                </div>
-              )}
-
               <button
                 onClick={handleGenerateOutfit}
                 disabled={generating || !weather}
-                className="w-full py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 transition-all disabled:opacity-50 bg-gradient-to-r from-purple-600 via-pink-600 to-amber-600 text-white shadow-2xl shadow-purple-900/20 active:scale-95"
+                className="btn-primary w-full h-[52px] text-lg"
               >
-                {generating ? (
-                  <><Loader2 className="w-6 h-6 animate-spin" /> STYLING...</>
-                ) : (
-                  <><Zap className="w-6 h-6" /> GENERATE OUTFIT</>
-                )}
+                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                {generating ? "STYLING..." : "GENERATE OUTFIT"}
               </button>
             </div>
 
             {/* Result Section */}
             {outfit && (
-              <div className="mt-10 p-8 bg-zinc-950 border border-zinc-800 rounded-[32px] animate-in fade-in slide-in-from-top-4 duration-700">
-                <div className="flex items-center justify-between mb-8 pb-4 border-b border-zinc-800">
-                  <h3 className="text-2xl font-bold text-white">Suggested Ensemble</h3>
-                  <div className="px-4 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-400 text-[10px] font-black uppercase tracking-widest">{occasion}</div>
+              <div className="mt-8 p-6 bg-gradient-to-br from-[#FAF5FF] to-[#FDF2F8] border border-[#DDD6FE] rounded-2xl animate-fade-in">
+                <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#E2E4F0]">
+                  <h3 className="text-xl font-bold text-[#1A1A2E]">Suggested Ensemble</h3>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#7C3AED] bg-[#F3F4FF] px-3 py-1 rounded-lg">{occasion}</span>
                 </div>
 
-                {gender === 'male' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      {[
-                        { l: "Top", v: outfit.top, e: "👕" },
-                        { l: "Bottom", v: outfit.bottom, e: "👖" },
-                        { l: "Footwear", v: outfit.footwear, e: "👟" },
-                        { l: "Accessory", v: outfit.accessory, e: "⌚" },
-                        ...(outfit.outerwear ? [{ l: "Outerwear", v: outfit.outerwear, e: "🧥" }] : []),
-                      ].map(i => (
-                        <div key={i.l} className="flex gap-4 p-4 bg-zinc-900/40 rounded-2xl border border-zinc-800">
-                          <span className="text-2xl">{i.e}</span>
-                          <div>
-                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{i.l}</p>
-                            <p className="text-sm font-medium text-zinc-200">{i.v}</p>
-                          </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    {gender === 'male' ? [
+                      { l: "Top", v: outfit.top, e: "👕" },
+                      { l: "Bottom", v: outfit.bottom, e: "👖" },
+                      { l: "Footwear", v: outfit.footwear, e: "👟" },
+                      { l: "Accessory", v: outfit.accessory, e: "⌚" },
+                    ].map(i => (
+                      <div key={i.l} className="flex gap-4 p-3 bg-white border border-[#E2E4F0] rounded-xl">
+                        <span className="text-xl">{i.e}</span>
+                        <div>
+                          <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{i.l}</p>
+                          <p className="text-sm font-semibold text-[#1A1A2E]">{i.v}</p>
                         </div>
-                      ))}
-                    </div>
-                    <div className="p-6 bg-purple-600/10 border border-purple-500/20 rounded-3xl h-fit">
-                       <p className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-3">Styling Advice</p>
-                       <p className="text-zinc-200 italic leading-relaxed">&quot;{outfit.tip}&quot;</p>
-                       <div className="mt-6 pt-6 border-t border-purple-500/10 space-y-2">
-                         <p className="text-xs font-bold text-red-400 uppercase tracking-widest">Avoid: <span className="text-zinc-400 normal-case font-normal">{outfit.avoid}</span></p>
-                         <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Fabric: <span className="text-zinc-400 normal-case font-normal">{outfit.fabric_recommendation}</span></p>
-                       </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      {[
-                        { l: "Outfit", v: outfit.outfit, e: "👗" },
-                        { l: "Footwear", v: outfit.footwear, e: "👡" },
-                        { l: "Bag", v: outfit.bag, e: "👜" },
-                        { l: "Jewellery", v: outfit.jewellery, e: "💍" },
-                        ...(outfit.dupatta_scarf ? [{ l: "Dupatta/Scarf", v: outfit.dupatta_scarf, e: "🧣" }] : []),
-                        { l: "Makeup", v: outfit.makeup, e: "💄" },
-                      ].map(i => (
-                        <div key={i.l} className="flex gap-4 p-4 bg-zinc-900/40 rounded-2xl border border-zinc-800">
-                          <span className="text-2xl">{i.e}</span>
-                          <div>
-                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{i.l}</p>
-                            <p className="text-sm font-medium text-zinc-200">{i.v}</p>
-                          </div>
+                      </div>
+                    )) : [
+                      { l: "Outfit", v: outfit.outfit, e: "👗" },
+                      { l: "Footwear", v: outfit.footwear, e: "👡" },
+                      { l: "Bag", v: outfit.bag, e: "👜" },
+                      { l: "Jewellery", v: outfit.jewellery, e: "💍" },
+                    ].map(i => (
+                      <div key={i.l} className="flex gap-4 p-3 bg-white border border-[#E2E4F0] rounded-xl">
+                        <span className="text-xl">{i.e}</span>
+                        <div>
+                          <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{i.l}</p>
+                          <p className="text-sm font-semibold text-[#1A1A2E]">{i.v}</p>
                         </div>
-                      ))}
-                    </div>
-                    <div className="p-6 bg-purple-600/10 border border-purple-500/20 rounded-3xl h-fit">
-                       <p className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-3">Styling Advice</p>
-                       <p className="text-zinc-200 italic leading-relaxed">&quot;{outfit.tip}&quot;</p>
-                       <div className="mt-6 pt-6 border-t border-purple-500/10 space-y-2">
-                         <p className="text-xs font-bold text-red-400 uppercase tracking-widest">Avoid: <span className="text-zinc-400 normal-case font-normal">{outfit.avoid}</span></p>
-                         <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Fabric: <span className="text-zinc-400 normal-case font-normal">{outfit.fabric_recommendation}</span></p>
-                       </div>
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                )}
+                  <div className="bg-[#FFFFFF]/60 p-5 rounded-xl border border-[#E2E4F0]">
+                     <p className="text-xs font-bold text-[#7C3AED] uppercase mb-2">Style Tip</p>
+                     <p className="text-[#1A1A2E] italic text-sm mb-4">&quot;{outfit.tip}&quot;</p>
+                     <div className="pt-4 border-t border-[#E2E4F0] space-y-2">
+                       <p className="text-[11px] font-bold text-red-500 uppercase">Avoid: <span className="text-[#6B7280] normal-case font-medium">{outfit.avoid}</span></p>
+                       <p className="text-[11px] font-bold text-emerald-600 uppercase">Fabric: <span className="text-[#6B7280] normal-case font-medium">{outfit.fabric_recommendation}</span></p>
+                     </div>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Right Column: Weather */}
-        <div className="lg:col-span-5 space-y-8">
-          <div className="bg-gradient-to-br from-zinc-900 to-black border border-zinc-800 rounded-[40px] p-8 md:p-10 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-5">
-              {weather ? <Image src={weather.icon_url} alt="weather" width={200} height={200} /> : <Sun className="w-40 h-40" />}
-            </div>
-
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-2 text-zinc-400 font-bold">
-                  <MapPin className="w-4 h-4 text-purple-500" />
-                  {weather ? `${weather.city}, ${weather.country}` : "Detecting location..."}
-                </div>
-                <button onClick={autoDetectLocation} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full transition-colors">
-                  <RefreshCcw className={`w-4 h-4 ${weatherLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-
-              {weatherLoading && !weather ? (
-                <div className="py-20 flex flex-col items-center gap-4">
-                  <Loader2 className="w-10 h-10 animate-spin text-purple-500" />
-                  <p className="text-zinc-500 font-medium">📍 Detecting your location...</p>
-                </div>
-              ) : weather ? (
-                <div className="space-y-8">
-                  <div className="flex items-center gap-8">
-                    <div className="w-24 h-24 bg-zinc-950 border border-zinc-800 rounded-[32px] flex items-center justify-center shadow-inner">
-                      <Image src={weather.icon_url} alt="icon" width={80} height={80} />
-                    </div>
-                    <div>
-                      <div className="text-7xl font-black text-white">{weather.temp}°<span className="text-2xl align-top mt-2 inline-block">C</span></div>
-                      <p className="text-zinc-400 font-bold capitalize text-xl">{weather.condition}</p>
-                      <p className="text-zinc-500 text-sm mt-1">Feels like {weather.feels_like}°C</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-zinc-950/50 p-5 rounded-3xl border border-zinc-800 flex items-center gap-4">
-                      <Droplets className="w-6 h-6 text-blue-400" />
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Humidity</p>
-                        <p className="text-lg font-bold">{weather.humidity}%</p>
-                      </div>
-                    </div>
-                    <div className="bg-zinc-950/50 p-5 rounded-3xl border border-zinc-800 flex items-center gap-4">
-                      <Wind className="w-6 h-6 text-teal-400" />
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Wind</p>
-                        <p className="text-lg font-bold">{weather.wind}km/h</p>
-                      </div>
-                    </div>
-                    <div className="bg-zinc-950/50 p-5 rounded-3xl border border-zinc-800 flex items-center gap-4">
-                      <Sunrise className="w-6 h-6 text-amber-400" />
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sunrise</p>
-                        <p className="text-lg font-bold">{weather.sunrise}</p>
-                      </div>
-                    </div>
-                    <div className="bg-zinc-950/50 p-5 rounded-3xl border border-zinc-800 flex items-center gap-4">
-                      <Sunset className="w-6 h-6 text-rose-400" />
-                      <div>
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sunset</p>
-                        <p className="text-lg font-bold">{weather.sunset}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-6 bg-white/5 rounded-[28px] border border-white/10 flex items-center gap-4">
-                    <Calendar className="w-6 h-6 text-zinc-400" />
-                    <div>
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Weather Insight</p>
-                      <p className="text-white font-bold leading-relaxed">{getWeatherTip(weather.temp, weather.condition)}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-10 space-y-6">
-                  {showCitySearch ? (
-                    <div className="space-y-4">
-                      <p className="text-zinc-400 text-sm">Location denied. Enter your city manually:</p>
-                      <div className="flex gap-2">
-                        <input 
-                          value={searchCity}
-                          onChange={e => setSearchCity(e.target.value)}
-                          placeholder="e.g. Chennai"
-                          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-purple-500/20"
-                        />
-                        <button 
-                          onClick={() => fetchWeatherData(undefined, undefined, searchCity)}
-                          className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-500 transition-all"
-                        >
-                          Search
-                        </button>
-                      </div>
-                    </div>
-                  ) : weatherError && (
-                    <div className="text-center p-6 border border-dashed border-zinc-800 rounded-3xl">
-                      <AlertCircle className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
-                      <p className="text-zinc-500 text-sm">{weatherError}</p>
-                      <button onClick={() => setShowCitySearch(true)} className="mt-4 text-purple-400 text-xs font-bold">Search Manually</button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Forecast Strip */}
           {forecast.length > 0 && (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 overflow-x-auto scrollbar-hide">
+            <div className="bg-white border border-[#E2E4F0] rounded-2xl p-6 overflow-x-auto shadow-sm">
               <div className="flex gap-4 min-w-max">
                 {forecast.map((f, i) => (
-                  <div key={i} className="flex flex-col items-center gap-2 p-4 bg-zinc-950 border border-zinc-800 rounded-2xl w-24">
-                    <p className="text-[10px] font-black text-zinc-500 uppercase">{f.date}</p>
-                    <Image src={`https://openweathermap.org/img/wn/${f.icon}.png`} alt="icon" width={40} height={40} />
-                    <p className="text-xl font-black text-white">{f.temp}°</p>
+                  <div key={i} className="flex flex-col items-center gap-1.5 p-3 bg-[#F8F9FF] border border-[#E2E4F0] rounded-xl w-24">
+                    <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{f.date}</p>
+                    <img src={`https://openweathermap.org/img/wn/${f.icon}.png`} alt="icon" width={32} height={32} />
+                    <p className="text-lg font-black text-[#1A1A2E]">{f.temp}°</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
+        </div>
 
-          {/* Intelligence Preview */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[40px] p-8 shadow-2xl">
-            <h3 className="text-sm font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-purple-400" /> Wardrobe Intelligence
+        {/* Right Column: Weather */}
+        <div className="space-y-6">
+          <div className="bg-gradient-to-br from-[#EEF2FF] to-[#FAF5FF] border border-[#DDD6FE] rounded-[32px] p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2 text-[#7C3AED] font-bold">
+                <MapPin className="w-4 h-4" />
+                {weather ? `${weather.city}, ${weather.country}` : "Detecting..."}
+              </div>
+              <button onClick={autoDetectLocation} className="p-2 bg-white hover:bg-[#F3F4FF] rounded-full border border-[#E2E4F0] shadow-sm">
+                <RefreshCcw className={`w-4 h-4 text-[#7C3AED] ${weatherLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {weatherLoading && !weather ? (
+              <div className="py-12 flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#7C3AED]" />
+                <p className="text-[#6B7280] text-sm">Detecting location...</p>
+              </div>
+            ) : weather ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-6">
+                  <img src={weather.icon_url} alt="weather" width={64} height={64} className="bg-white rounded-2xl shadow-sm" />
+                  <div>
+                    <div className="text-5xl font-extrabold text-[#1A1A2E] leading-none">{weather.temp}°<span className="text-xl align-top">C</span></div>
+                    <p className="text-[#6B7280] font-bold capitalize text-lg mt-1">{weather.condition}</p>
+                  </div>
+                </div>
+                
+                <p className="text-sm font-semibold text-[#1A1A2E] flex items-center gap-2">
+                  <span className="bg-white/50 px-3 py-1 rounded-full">Feels like {weather.feels_like}°C</span>
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white/60 p-4 rounded-2xl border border-[#E2E4F0]">
+                    <p className="text-[10px] font-black text-[#9CA3AF] uppercase">Humidity</p>
+                    <p className="text-lg font-bold">{weather.humidity}%</p>
+                  </div>
+                  <div className="bg-white/60 p-4 rounded-2xl border border-[#E2E4F0]">
+                    <p className="text-[10px] font-black text-[#9CA3AF] uppercase">Wind</p>
+                    <p className="text-lg font-bold">{weather.wind} km/h</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-between p-4 bg-white/40 rounded-2xl border border-[#E2E4F0] text-sm">
+                  <div className="flex items-center gap-2 font-semibold">🌅 {weather.sunrise}</div>
+                  <div className="flex items-center gap-2 font-semibold">🌇 {weather.sunset}</div>
+                </div>
+
+                <div className="p-4 bg-[#7C3AED]/5 rounded-2xl border border-[#7C3AED]/20">
+                  <p className="text-[10px] font-bold text-[#7C3AED] uppercase mb-1">Today&apos;s Advice</p>
+                  <p className="text-[#1A1A2E] font-semibold text-sm leading-relaxed">{getWeatherTip(weather.temp, weather.condition)}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="py-4 space-y-4">
+                {showCitySearch ? (
+                  <div className="space-y-3">
+                    <input 
+                      value={cityInput}
+                      onChange={e => setCityInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleCitySearch()}
+                      placeholder="Enter city (e.g. Coimbatore)"
+                      className="text-sm"
+                    />
+                    <button onClick={handleCitySearch} className="btn-primary w-full py-2.5 text-sm">Search City</button>
+                  </div>
+                ) : weatherError && (
+                  <div className="text-center p-4">
+                    <p className="text-red-500 text-xs mb-3">{weatherError}</p>
+                    <button onClick={() => setShowCitySearch(true)} className="text-[#7C3AED] text-xs font-bold underline">Search Manually</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Intelligence Card */}
+          <div className="card">
+            <h3 className="text-sm font-black text-[#9CA3AF] uppercase tracking-widest mb-6 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-[#7C3AED]" /> Wardrobe Intelligence
             </h3>
             {analysis ? (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between p-4 bg-zinc-950 rounded-2xl border border-zinc-800">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-[#F3F4FF] rounded-xl border border-[#E2E4F0]">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-purple-600/20 flex items-center justify-center text-purple-400 font-black text-lg">
+                    <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center text-[#7C3AED] font-black">
                       {analysis.analysis.summary.wardrobe_score}
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-zinc-500 uppercase">Style Score</p>
-                      <p className="text-sm font-bold">Readiness Score</p>
+                      <p className="text-xs font-bold text-[#6B7280] uppercase">Score</p>
+                      <p className="text-xs font-bold text-[#1A1A2E]">Readiness</p>
                     </div>
                   </div>
                   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                 </div>
-                <Link href="/wardrobe" className="w-full py-4 bg-purple-600 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20">
+                <Link href="/wardrobe" className="btn-primary py-3 text-sm">
                   Full Analysis <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
             ) : (
-              <div className="text-center py-6">
-                <p className="text-zinc-600 text-sm">Upload your wardrobe to see score</p>
-              </div>
+              <Link href="/wardrobe" className="btn-secondary w-full block text-center text-sm">Analyze Collection</Link>
             )}
           </div>
         </div>

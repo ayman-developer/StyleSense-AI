@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
+import { Loader2, Sparkles } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -12,19 +13,11 @@ export default function LoginPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    console.log("Login Page: Initializing auth check...");
-    
-    const timer = setTimeout(() => {
-      console.log("Login Page: 3s timeout reached, forcing ready state");
-      setReady(true)
-    }, 3000)
+    const timer = setTimeout(() => setReady(true), 3000)
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      console.log("Login Page: Auth state changed. User:", user ? "Logged In" : "Logged Out");
-      
       if (user) {
         try {
-          console.log("Login Page: Existing session found, performing background sync...");
           const res = await fetch('/api/auth/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -37,25 +30,17 @@ export default function LoginPage() {
           });
           
           if (res.ok) {
-            console.log("Login Page: Sync complete, navigating to dashboard");
             router.replace('/dashboard')
           } else {
-            const data = await res.json();
-            console.error("Login Page: Auto-sync API error:", data.error);
             setReady(true);
           }
         } catch (syncErr) {
-          console.error("Login Page: Auto-sync network error:", syncErr);
           setReady(true);
         }
       } else {
         clearTimeout(timer)
         setReady(true)
       }
-    }, (authErr) => {
-      console.error("Login Page: Auth state listener error:", authErr);
-      clearTimeout(timer);
-      setReady(true);
     })
 
     return () => {
@@ -67,13 +52,11 @@ export default function LoginPage() {
   const login = async () => {
     setLoading(true)
     setError('')
-    console.log("Login Page: Starting Google sign-in...");
     try {
       const provider = new GoogleAuthProvider()
       provider.setCustomParameters({ prompt: 'select_account' })
       const result = await signInWithPopup(auth, provider)
       const user = result.user
-      console.log("Login Page: Sign-in successful, syncing user...");
       
       const syncRes = await fetch('/api/auth/sync', {
         method: 'POST',
@@ -86,16 +69,9 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await syncRes.json();
-
-      if (!syncRes.ok) {
-        throw new Error(data.error || "Sync API failed");
-      }
-
-      console.log("Login Page: User synced, redirecting...");
+      if (!syncRes.ok) throw new Error("Sync failed");
       router.replace('/dashboard')
     } catch (err: any) {
-      console.error("Login Page: Login error:", err);
       setError(err?.message || 'Login failed. Try again.')
       setLoading(false)
     }
@@ -103,46 +79,60 @@ export default function LoginPage() {
 
   if (!ready) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
-        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-purple-500 mb-4" />
-        <p className="text-gray-400 text-sm">Initializing StyleSense AI...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8F9FF]">
+        <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED] mb-4" />
+        <p className="text-[#6B7280] font-medium animate-pulse">Initializing StyleSense AI...</p>
       </div>
     )
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-black px-4">
-      <div className="bg-zinc-900 rounded-2xl p-8 w-full max-w-sm text-center shadow-xl border border-zinc-800 animate-in fade-in zoom-in duration-500">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent mb-2">StyleSense AI</h1>
-        <p className="text-gray-400 mb-6 text-sm">Your Personal AI Stylist</p>
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[#EEF2FF] to-[#FAF5FF] px-4">
+      <div className="bg-white rounded-[32px] p-10 w-full max-w-md text-center shadow-2xl border border-[#E2E4F0] animate-in fade-in zoom-in duration-700">
+        <div className="w-16 h-16 bg-[#7C3AED]/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <Sparkles className="w-8 h-8 text-[#7C3AED]" />
+        </div>
+        
+        <h1 className="text-4xl font-extrabold bg-gradient-to-r from-[#7C3AED] to-[#EC4899] bg-clip-text text-transparent mb-3">StyleSense AI</h1>
+        <p className="text-[#6B7280] font-medium mb-10">Your Premium Personal AI Stylist</p>
         
         {error && (
-          <div className="mb-4 bg-red-950/50 border border-red-900/50 rounded-lg p-3">
-            <p className="text-red-400 text-xs font-medium mb-1">Database Sync Error</p>
-            <p className="text-red-300 text-[10px] opacity-80">{error}</p>
+          <div className="mb-6 bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center gap-3 text-red-600 text-sm">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            {error}
           </div>
         )}
         
         <button
           onClick={login}
           disabled={loading}
-          className="w-full bg-white text-black font-bold py-4 rounded-xl 
-                     hover:bg-gray-100 transition active:scale-95 disabled:opacity-50 
-                     disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-white/5"
+          className="w-full bg-[#1A1A2E] text-white font-bold py-4 rounded-2xl 
+                     hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 
+                     flex items-center justify-center gap-3 shadow-xl shadow-[#1A1A2E]/20"
         >
           {loading ? (
-            <>
-              <div className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full" />
-              Please wait...
-            </>
+            <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
-            'Continue with Google'
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
           )}
+          {loading ? "Signing in..." : "Continue with Google"}
         </button>
-        <p className="mt-6 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold opacity-50">
-          Powered by StyleSense AI
+        
+        <p className="mt-10 text-xs text-[#9CA3AF] font-bold uppercase tracking-[0.2em]">
+          Elegance Powered by AI
         </p>
       </div>
     </div>
+  )
+}
+
+function AlertCircle(props: any) {
+  return (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   )
 }
