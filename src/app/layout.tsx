@@ -24,15 +24,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="antialiased min-h-screen">
+    <html lang="en">
+      <body className={`${inter.variable} antialiased`}>
         <AuthProvider>
-          <div className="flex flex-col min-h-screen">
-            <Navbar />
-            <main className="flex-1 px-4 md:px-6 lg:px-8 py-8">
-              {children}
-            </main>
-          </div>
+          <Navbar />
+          <main>{children}</main>
           <ChatWidget />
         </AuthProvider>
       </body>

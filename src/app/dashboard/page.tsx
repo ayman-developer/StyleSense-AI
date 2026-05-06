@@ -1,143 +1,109 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import {
-  MapPin, Loader2, Sparkles, ThumbsUp, ThumbsDown, AlertCircle, 
-  Droplets, Wind, Sunrise, Sunset, Search, RefreshCcw, Calendar,
-  ArrowRight, Zap, CheckCircle2
-} from "lucide-react";
-import Link from "next/link";
-import Image from "next/image";
-
-type Weather = {
-  city: string;
-  country: string;
-  temp: number;
-  feels_like: number;
-  condition: string;
-  humidity: number;
-  wind: number;
-  sunrise: string;
-  sunset: string;
-  icon: string;
-  icon_url: string;
-};
-
-type Forecast = {
-  dt: number;
-  temp: number;
-  condition: string;
-  icon: string;
-  date: string;
-};
-
-const MALE_OCCASIONS = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival", "Traditional (Kurta/Dhoti)"];
-const FEMALE_OCCASIONS = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival", "Traditional (Saree/Salwar)", "Wedding Guest", "Brunch"];
+import { useRouter } from "next/navigation";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  
-  const [gender, setGender] = useState<'male' | 'female'>('male');
-  const [weather, setWeather] = useState<Weather | null>(null);
-  const [forecast, setForecast] = useState<Forecast[]>([]);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [showCitySearch, setShowCitySearch] = useState(false);
-  const [cityInput, setCityInput] = useState("");
-  
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Auth check
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+      } else {
+        router.replace("/login");
+      }
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, [router]);
+
+  // Gender state
+  const [gender, setGender] = useState("male");
+
+  // Occasion state
   const [occasion, setOccasion] = useState("Casual");
+
+  // Weather state
+  const [weather, setWeather] = useState<any>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState("");
+  const [cityInput, setCityInput] = useState("");
+  const [showCitySearch, setShowCitySearch] = useState(false);
+
+  // Outfit state
   const [outfit, setOutfit] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
-  const [outfitError, setOutfitError] = useState<string | null>(null);
-  const [feedbackSent, setFeedbackSent] = useState(false);
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [outfitError, setOutfitError] = useState("");
 
+  // Auto detect weather on load
   useEffect(() => {
-    if (user?.uid) {
-      fetchPreferences();
-      fetchAnalysis();
-      autoDetectLocation();
+    if (!authLoading && user) {
+      setWeatherLoading(true);
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            await fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude);
+          },
+          () => {
+            setWeatherLoading(false);
+            setShowCitySearch(true);
+          }
+        );
+      } else {
+        setWeatherLoading(false);
+        setShowCitySearch(true);
+      }
     }
-  }, [user?.uid]);
+  }, [authLoading, user]);
 
-  const fetchPreferences = async () => {
-    try {
-      const res = await fetch(`/api/user/preferences?userId=${user?.uid}`);
-      const data = await res.json();
-      if (data?.gender) setGender(data.gender);
-    } catch (e) {}
-  };
-
-  const fetchAnalysis = async () => {
-    try {
-      const res = await fetch(`/api/wardrobe/analyze/last?userId=${user?.uid}`);
-      if (res.ok) setAnalysis(await res.json());
-    } catch (e) {}
-  };
-
-  const fetchWeatherData = async (lat?: number, lon?: number, city?: string) => {
+  const fetchWeatherByCoords = async (lat: number, lon: number) => {
     setWeatherLoading(true);
-    setWeatherError(null);
+    setWeatherError("");
     try {
-      const query = city ? `city=${encodeURIComponent(city.trim())}` : `lat=${lat}&lon=${lon}`;
-      
-      const weatherRes = await fetch(`/api/weather?${query}`);
-      const weatherData = await weatherRes.json();
-      if (!weatherRes.ok) throw new Error(weatherData.error || "Weather fetch failed");
-      setWeather(weatherData);
-
-      const forecastRes = await fetch(`/api/weather?${query}&forecast=true`);
-      if (forecastRes.ok) setForecast(await forecastRes.json());
-      
+      const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setWeather(data);
       setShowCitySearch(false);
     } catch (err: any) {
-      setWeatherError(err.message || "Could not fetch weather.");
+      setWeatherError(err.message);
+      setShowCitySearch(true);
     } finally {
       setWeatherLoading(false);
     }
   };
 
-  const autoDetectLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeatherData(pos.coords.latitude, pos.coords.longitude),
-        () => {
-          setWeatherError("Location access denied");
-          setShowCitySearch(true);
-        }
-      );
-    } else {
-      setShowCitySearch(true);
-    }
-  };
-
-  const handleCitySearch = () => {
-    if (cityInput.trim()) fetchWeatherData(undefined, undefined, cityInput.trim());
-  };
-
-  const updateGender = async (newGender: 'male' | 'female') => {
-    setGender(newGender);
-    setOccasion("Casual");
-    setOutfit(null);
+  const handleCitySearch = async () => {
+    if (!cityInput.trim()) return;
+    setWeatherLoading(true);
+    setWeatherError("");
     try {
-      await fetch('/api/user/preferences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.uid, gender: newGender })
-      });
-    } catch (e) {}
+      const res = await fetch(`/api/weather?city=${encodeURIComponent(cityInput.trim())}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setWeather(data);
+      setShowCitySearch(false);
+    } catch (err: any) {
+      setWeatherError("City not found. Try: Chennai, Coimbatore, Mumbai");
+    } finally {
+      setWeatherLoading(false);
+    }
   };
 
   const handleGenerateOutfit = async () => {
     if (!weather) {
-      setOutfitError("Please get your location weather first!");
+      setOutfitError("Please search your city first to get weather!");
       return;
     }
     setGenerating(true);
     setOutfit(null);
-    setOutfitError(null);
-    setFeedbackSent(false);
+    setOutfitError("");
     try {
       const res = await fetch("/api/outfit", {
         method: "POST",
@@ -145,260 +111,337 @@ export default function Dashboard() {
         body: JSON.stringify({ weather, occasion, gender }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate outfit");
+      if (!res.ok) throw new Error(data.error || "Generation failed");
       setOutfit(data);
     } catch (err: any) {
-      setOutfitError(err.message || "Something went wrong. Try again.");
+      setOutfitError(err.message || "Failed to generate outfit. Check GROQ_API_KEY.");
     } finally {
       setGenerating(false);
     }
   };
 
-  const getWeatherTip = (temp: number, condition: string) => {
-    const c = condition.toLowerCase();
-    if (c.includes('rain')) return "🌧️ Rainy — Wear waterproof shoes, carry umbrella";
-    if (temp >= 35) return "🔥 Very Hot — Wear light cotton/linen. Stay hydrated!";
-    if (temp >= 25) return "🌤️ Warm — Light layers work well today";
-    if (temp >= 15) return "🌥️ Cool — Add a light jacket or cardigan";
-    return "🧥 Cold — Layer up with warm clothing";
-  };
+  const maleOccasions = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival", "Traditional (Kurta/Dhoti)"];
+  const femaleOccasions = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival", "Traditional (Saree/Salwar)", "Wedding Guest", "Brunch"];
+
+  if (authLoading)
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#F8F9FF" }}>
+        <p>Loading...</p>
+      </div>
+    );
 
   return (
-    <div className="animate-fade-in max-w-[1200px] mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-extrabold text-[#1A1A2E] mb-1">
-          Welcome back, {user?.displayName?.split(" ")[0] || "Stylist"}! {gender === 'male' ? '👨💼' : '👩💼'}
+    <div style={{ background: "#F8F9FF", minHeight: "100vh", padding: "2rem 1.5rem", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Welcome */}
+      <div style={{ marginBottom: "1.5rem" }}>
+        <h1 style={{ fontSize: "2rem", fontWeight: "700", color: "#1A1A2E" }}>
+          Welcome back, {user?.displayName?.split(" ")[0] || "User"}! {gender === "male" ? "👨💼" : "👩💼"}
         </h1>
-        <p className="text-[#6B7280] text-lg">Personalized fashion intelligence for you.</p>
-      </header>
+        <p style={{ color: "#6B7280", marginTop: "0.25rem" }}>Personalized fashion intelligence for you.</p>
+      </div>
 
       {/* Gender Toggle */}
-      <div className="flex bg-[#F3F4FF] p-1 rounded-2xl w-fit mb-8 border border-[#E2E4F0]">
-        <button 
-          onClick={() => updateGender('male')}
-          className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${gender === 'male' ? 'bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white shadow-md' : 'text-[#6B7280] hover:text-[#7C3AED]'}`}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", background: "#F3F4FF", padding: "0.25rem", borderRadius: "12px", width: "fit-content" }}>
+        <button
+          onClick={() => {
+            setGender("male");
+            setOccasion("Casual");
+            setOutfit(null);
+          }}
+          style={{
+            padding: "0.6rem 1.5rem",
+            borderRadius: "10px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "600",
+            fontSize: "0.9rem",
+            transition: "all 0.2s",
+            background: gender === "male" ? "linear-gradient(135deg, #7C3AED, #EC4899)" : "transparent",
+            color: gender === "male" ? "white" : "#6B7280",
+          }}
         >
           👨 Male
         </button>
-        <button 
-          onClick={() => updateGender('female')}
-          className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${gender === 'female' ? 'bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white shadow-md' : 'text-[#6B7280] hover:text-[#7C3AED]'}`}
+        <button
+          onClick={() => {
+            setGender("female");
+            setOccasion("Casual");
+            setOutfit(null);
+          }}
+          style={{
+            padding: "0.6rem 1.5rem",
+            borderRadius: "10px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "600",
+            fontSize: "0.9rem",
+            transition: "all 0.2s",
+            background: gender === "female" ? "linear-gradient(135deg, #7C3AED, #EC4899)" : "transparent",
+            color: gender === "female" ? "white" : "#6B7280",
+          }}
         >
           👩 Female
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
-        {/* Left Column: Generator */}
-        <div className="space-y-6">
-          <div className="card">
-            <h2 className="text-xl font-bold flex items-center gap-3 mb-6">
-              <Zap className="w-5 h-5 text-[#7C3AED]" />
-              Outfit Generator
-            </h2>
-
-            <div className="space-y-6">
-              <div>
-                <span className="section-label">THE OCCASION</span>
-                <div className="flex flex-wrap gap-2">
-                  {(gender === 'male' ? MALE_OCCASIONS : FEMALE_OCCASIONS).map((occ) => (
-                    <button
-                      key={occ}
-                      onClick={() => setOccasion(occ)}
-                      className={`px-5 py-2 rounded-full text-sm font-semibold border transition-all ${
-                        occasion === occ
-                          ? "bg-gradient-to-r from-[#7C3AED] to-[#EC4899] text-white border-transparent shadow-sm"
-                          : "bg-[#F3F4FF] text-[#1A1A2E] border-[#E2E4F0] hover:border-[#7C3AED]"
-                      }`}
-                    >
-                      {occ}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
+      {/* Main Grid */}
+      <div className="dashboard-grid" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "1.5rem", alignItems: "start" }}>
+        {/* LEFT: Outfit Generator */}
+        <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E4F0", boxShadow: "0 2px 12px rgba(124,58,237,0.08)" }}>
+          <h2 style={{ color: "#1A1A2E", marginBottom: "1rem", fontSize: "1.1rem", fontWeight: "600" }}>⚡ Outfit Generator</h2>
+          <p style={{ fontSize: "0.75rem", fontWeight: "600", letterSpacing: "0.08em", textTransform: "uppercase", color: "#9CA3AF", marginBottom: "0.75rem" }}>THE OCCASION</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.5rem" }}>
+            {(gender === "male" ? maleOccasions : femaleOccasions).map((occ) => (
               <button
-                onClick={handleGenerateOutfit}
-                disabled={generating || !weather}
-                className="btn-primary w-full h-[52px] text-lg"
+                key={occ}
+                onClick={() => setOccasion(occ)}
+                style={{
+                  padding: "0.45rem 1rem",
+                  borderRadius: "20px",
+                  cursor: "pointer",
+                  fontSize: "0.875rem",
+                  fontWeight: "500",
+                  transition: "all 0.2s",
+                  border: "none",
+                  background: occasion === occ ? "linear-gradient(135deg, #7C3AED, #EC4899)" : "#F3F4FF",
+                  color: occasion === occ ? "white" : "#1A1A2E",
+                }}
               >
-                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {generating ? "STYLING..." : "GENERATE OUTFIT"}
+                {occ}
               </button>
-            </div>
-
-            {/* Result Section */}
-            {outfit && (
-              <div className="mt-8 p-6 bg-gradient-to-br from-[#FAF5FF] to-[#FDF2F8] border border-[#DDD6FE] rounded-2xl animate-fade-in">
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#E2E4F0]">
-                  <h3 className="text-xl font-bold text-[#1A1A2E]">Suggested Ensemble</h3>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#7C3AED] bg-[#F3F4FF] px-3 py-1 rounded-lg">{occasion}</span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    {gender === 'male' ? [
-                      { l: "Top", v: outfit.top, e: "👕" },
-                      { l: "Bottom", v: outfit.bottom, e: "👖" },
-                      { l: "Footwear", v: outfit.footwear, e: "👟" },
-                      { l: "Accessory", v: outfit.accessory, e: "⌚" },
-                    ].map(i => (
-                      <div key={i.l} className="flex gap-4 p-3 bg-white border border-[#E2E4F0] rounded-xl">
-                        <span className="text-xl">{i.e}</span>
-                        <div>
-                          <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{i.l}</p>
-                          <p className="text-sm font-semibold text-[#1A1A2E]">{i.v}</p>
-                        </div>
-                      </div>
-                    )) : [
-                      { l: "Outfit", v: outfit.outfit, e: "👗" },
-                      { l: "Footwear", v: outfit.footwear, e: "👡" },
-                      { l: "Bag", v: outfit.bag, e: "👜" },
-                      { l: "Jewellery", v: outfit.jewellery, e: "💍" },
-                    ].map(i => (
-                      <div key={i.l} className="flex gap-4 p-3 bg-white border border-[#E2E4F0] rounded-xl">
-                        <span className="text-xl">{i.e}</span>
-                        <div>
-                          <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{i.l}</p>
-                          <p className="text-sm font-semibold text-[#1A1A2E]">{i.v}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="bg-[#FFFFFF]/60 p-5 rounded-xl border border-[#E2E4F0]">
-                     <p className="text-xs font-bold text-[#7C3AED] uppercase mb-2">Style Tip</p>
-                     <p className="text-[#1A1A2E] italic text-sm mb-4">&quot;{outfit.tip}&quot;</p>
-                     <div className="pt-4 border-t border-[#E2E4F0] space-y-2">
-                       <p className="text-[11px] font-bold text-red-500 uppercase">Avoid: <span className="text-[#6B7280] normal-case font-medium">{outfit.avoid}</span></p>
-                       <p className="text-[11px] font-bold text-emerald-600 uppercase">Fabric: <span className="text-[#6B7280] normal-case font-medium">{outfit.fabric_recommendation}</span></p>
-                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            ))}
           </div>
 
-          {/* Forecast Strip */}
-          {forecast.length > 0 && (
-            <div className="bg-white border border-[#E2E4F0] rounded-2xl p-6 overflow-x-auto shadow-sm">
-              <div className="flex gap-4 min-w-max">
-                {forecast.map((f, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1.5 p-3 bg-[#F8F9FF] border border-[#E2E4F0] rounded-xl w-24">
-                    <p className="text-[10px] font-bold text-[#9CA3AF] uppercase">{f.date}</p>
-                    <img src={`https://openweathermap.org/img/wn/${f.icon}.png`} alt="icon" width={32} height={32} />
-                    <p className="text-lg font-black text-[#1A1A2E]">{f.temp}°</p>
+          {outfitError && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "0.75rem", marginBottom: "1rem", color: "#DC2626", fontSize: "0.875rem" }}>
+              ⚠️ {outfitError}
+            </div>
+          )}
+
+          <button
+            onClick={handleGenerateOutfit}
+            disabled={generating}
+            style={{
+              width: "100%",
+              height: "52px",
+              border: "none",
+              borderRadius: "12px",
+              cursor: generating ? "not-allowed" : "pointer",
+              background: generating ? "#C4B5FD" : "linear-gradient(135deg, #7C3AED, #EC4899)",
+              color: "white",
+              fontWeight: "600",
+              fontSize: "1rem",
+              letterSpacing: "0.03em",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "0.5rem",
+            }}
+          >
+            {generating ? (
+              <>
+                <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Generating...
+              </>
+            ) : (
+              "⚡ GENERATE OUTFIT"
+            )}
+          </button>
+
+          {/* Outfit Result */}
+          {outfit && (
+            <div style={{ marginTop: "1.5rem", background: "linear-gradient(135deg, #FAF5FF, #FDF2F8)", border: "1px solid #DDD6FE", borderRadius: "16px", padding: "1.5rem" }}>
+              <h3 style={{ color: "#7C3AED", marginBottom: "1rem", fontSize: "1.1rem", fontWeight: "600" }}>
+                ✨ Your {occasion} Outfit
+              </h3>
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {outfit.top && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>👕 Top:</strong> {outfit.top}
+                  </p>
+                )}
+                {outfit.outfit && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>👗 Outfit:</strong> {outfit.outfit}
+                  </p>
+                )}
+                {outfit.bottom && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>👖 Bottom:</strong> {outfit.bottom}
+                  </p>
+                )}
+                {outfit.footwear && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>👟 Footwear:</strong> {outfit.footwear}
+                  </p>
+                )}
+                {outfit.accessory && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>⌚ Accessory:</strong> {outfit.accessory}
+                  </p>
+                )}
+                {outfit.bag && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>👜 Bag:</strong> {outfit.bag}
+                  </p>
+                )}
+                {outfit.jewellery && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>💍 Jewellery:</strong> {outfit.jewellery}
+                  </p>
+                )}
+                {outfit.outerwear && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>🧥 Outerwear:</strong> {outfit.outerwear}
+                  </p>
+                )}
+                {outfit.colors && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>🎨 Colors:</strong> {outfit.colors}
+                  </p>
+                )}
+                {outfit.fabric_recommendation && (
+                  <p style={{ color: "#1A1A2E" }}>
+                    <strong>🧵 Fabric:</strong> {outfit.fabric_recommendation}
+                  </p>
+                )}
+                {outfit.tip && (
+                  <div style={{ background: "#EEF2FF", borderRadius: "10px", padding: "0.75rem", borderLeft: "3px solid #7C3AED" }}>
+                    <p style={{ color: "#5B21B6", fontStyle: "italic" }}>💡 {outfit.tip}</p>
                   </div>
-                ))}
+                )}
+                {outfit.avoid && <p style={{ color: "#DC2626", fontSize: "0.875rem" }}>❌ Avoid: {outfit.avoid}</p>}
+              </div>
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+                <button style={{ flex: 1, padding: "0.6rem", background: "#DCFCE7", color: "#16A34A", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600" }}>👍 Love it</button>
+                <button style={{ flex: 1, padding: "0.6rem", background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600" }}>👎 Not for me</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Column: Weather */}
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-[#EEF2FF] to-[#FAF5FF] border border-[#DDD6FE] rounded-[32px] p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2 text-[#7C3AED] font-bold">
-                <MapPin className="w-4 h-4" />
-                {weather ? `${weather.city}, ${weather.country}` : "Detecting..."}
+        {/* RIGHT: Weather + Wardrobe */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* Weather Card */}
+          <div style={{ background: "linear-gradient(135deg, #EEF2FF, #FAF5FF)", border: "1px solid #DDD6FE", borderRadius: "16px", padding: "1.5rem" }}>
+            {weatherLoading && (
+              <div style={{ textAlign: "center", color: "#7C3AED", padding: "1rem" }}>
+                <p>📍 Detecting location...</p>
               </div>
-              <button onClick={autoDetectLocation} className="p-2 bg-white hover:bg-[#F3F4FF] rounded-full border border-[#E2E4F0] shadow-sm">
-                <RefreshCcw className={`w-4 h-4 text-[#7C3AED] ${weatherLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+            )}
 
-            {weatherLoading && !weather ? (
-              <div className="py-12 flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-[#7C3AED]" />
-                <p className="text-[#6B7280] text-sm">Detecting location...</p>
-              </div>
-            ) : weather ? (
-              <div className="space-y-6">
-                <div className="flex items-center gap-6">
-                  <img src={weather.icon_url} alt="weather" width={64} height={64} className="bg-white rounded-2xl shadow-sm" />
-                  <div>
-                    <div className="text-5xl font-extrabold text-[#1A1A2E] leading-none">{weather.temp}°<span className="text-xl align-top">C</span></div>
-                    <p className="text-[#6B7280] font-bold capitalize text-lg mt-1">{weather.condition}</p>
-                  </div>
-                </div>
-                
-                <p className="text-sm font-semibold text-[#1A1A2E] flex items-center gap-2">
-                  <span className="bg-white/50 px-3 py-1 rounded-full">Feels like {weather.feels_like}°C</span>
+            {weather && !weatherLoading && (
+              <div>
+                <p style={{ color: "#7C3AED", fontWeight: "600", fontSize: "0.95rem", marginBottom: "0.5rem" }}>
+                  📍 {weather.city}, {weather.country}
                 </p>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white/60 p-4 rounded-2xl border border-[#E2E4F0]">
-                    <p className="text-[10px] font-black text-[#9CA3AF] uppercase">Humidity</p>
-                    <p className="text-lg font-bold">{weather.humidity}%</p>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.25rem" }}>
+                  {weather.icon_url && <img src={weather.icon_url} width={56} height={56} alt={weather.condition} />}
+                  <span style={{ fontSize: "3.5rem", fontWeight: "800", color: "#1A1A2E", lineHeight: 1 }}>{weather.temp}°C</span>
+                </div>
+                <p style={{ color: "#6B7280", textTransform: "capitalize", marginBottom: "0.75rem" }}>
+                  {weather.condition} · Feels like {weather.feels_like}°C
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                  <div style={{ background: "white", borderRadius: "10px", padding: "0.6rem", textAlign: "center" }}>
+                    <p style={{ fontSize: "0.7rem", color: "#9CA3AF", textTransform: "uppercase" }}>Humidity</p>
+                    <p style={{ fontWeight: "700", color: "#1A1A2E" }}>{weather.humidity}%</p>
                   </div>
-                  <div className="bg-white/60 p-4 rounded-2xl border border-[#E2E4F0]">
-                    <p className="text-[10px] font-black text-[#9CA3AF] uppercase">Wind</p>
-                    <p className="text-lg font-bold">{weather.wind} km/h</p>
+                  <div style={{ background: "white", borderRadius: "10px", padding: "0.6rem", textAlign: "center" }}>
+                    <p style={{ fontSize: "0.7rem", color: "#9CA3AF", textTransform: "uppercase" }}>Wind</p>
+                    <p style={{ fontWeight: "700", color: "#1A1A2E" }}>{weather.wind} km/h</p>
                   </div>
                 </div>
-
-                <div className="flex justify-between p-4 bg-white/40 rounded-2xl border border-[#E2E4F0] text-sm">
-                  <div className="flex items-center gap-2 font-semibold">🌅 {weather.sunrise}</div>
-                  <div className="flex items-center gap-2 font-semibold">🌇 {weather.sunset}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6B7280", marginBottom: "0.75rem" }}>
+                  <span>🌅 {weather.sunrise}</span>
+                  <span>🌇 {weather.sunset}</span>
                 </div>
-
-                <div className="p-4 bg-[#7C3AED]/5 rounded-2xl border border-[#7C3AED]/20">
-                  <p className="text-[10px] font-bold text-[#7C3AED] uppercase mb-1">Today&apos;s Advice</p>
-                  <p className="text-[#1A1A2E] font-semibold text-sm leading-relaxed">{getWeatherTip(weather.temp, weather.condition)}</p>
+                <div style={{ background: "#7C3AED", borderRadius: "10px", padding: "0.6rem", textAlign: "center" }}>
+                  <p style={{ color: "white", fontSize: "0.8rem", fontWeight: "500" }}>
+                    {weather.temp >= 35
+                      ? "🔥 Very Hot — Wear light cotton/linen"
+                      : weather.temp >= 30
+                      ? "☀️ Hot — Light breathable fabrics"
+                      : weather.temp >= 25
+                      ? "🌤️ Warm — Light layers work well"
+                      : weather.temp >= 20
+                      ? "⛅ Pleasant — Any outfit works"
+                      : weather.temp >= 15
+                      ? "🌥️ Cool — Add a light jacket"
+                      : "🧥 Cold — Layer up with warm clothing"}
+                  </p>
                 </div>
+                <button
+                  onClick={() => setShowCitySearch(true)}
+                  style={{
+                    marginTop: "0.75rem",
+                    width: "100%",
+                    padding: "0.5rem",
+                    background: "transparent",
+                    border: "1px solid #DDD6FE",
+                    borderRadius: "10px",
+                    color: "#7C3AED",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: "500",
+                  }}
+                >
+                  🔄 Change City
+                </button>
               </div>
-            ) : (
-              <div className="py-4 space-y-4">
-                {showCitySearch ? (
-                  <div className="space-y-3">
-                    <input 
-                      value={cityInput}
-                      onChange={e => setCityInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleCitySearch()}
-                      placeholder="Enter city (e.g. Coimbatore)"
-                      className="text-sm"
-                    />
-                    <button onClick={handleCitySearch} className="btn-primary w-full py-2.5 text-sm">Search City</button>
-                  </div>
-                ) : weatherError && (
-                  <div className="text-center p-4">
-                    <p className="text-red-500 text-xs mb-3">{weatherError}</p>
-                    <button onClick={() => setShowCitySearch(true)} className="text-[#7C3AED] text-xs font-bold underline">Search Manually</button>
-                  </div>
-                )}
+            )}
+
+            {(showCitySearch || weatherError) && !weatherLoading && (
+              <div>
+                {weatherError && <p style={{ color: "#DC2626", fontSize: "0.85rem", marginBottom: "0.75rem" }}>⚠️ {weatherError}</p>}
+                <p style={{ color: "#6B7280", fontSize: "0.85rem", marginBottom: "0.5rem" }}>Enter your city:</p>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <input
+                    type="text"
+                    value={cityInput}
+                    onChange={(e) => setCityInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCitySearch()}
+                    placeholder="e.g. Coimbatore"
+                    style={{ flex: 1, padding: "0.6rem 0.75rem", borderRadius: "10px", border: "1px solid #E2E4F0", fontSize: "0.9rem", background: "white", color: "#1A1A2E", outline: "none" }}
+                  />
+                  <button
+                    onClick={handleCitySearch}
+                    style={{ padding: "0.6rem 1rem", background: "linear-gradient(135deg, #7C3AED, #EC4899)", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.85rem" }}
+                  >
+                    Search
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Intelligence Card */}
-          <div className="card">
-            <h3 className="text-sm font-black text-[#9CA3AF] uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-[#7C3AED]" /> Wardrobe Intelligence
-            </h3>
-            {analysis ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-[#F3F4FF] rounded-xl border border-[#E2E4F0]">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center text-[#7C3AED] font-black">
-                      {analysis.analysis.summary.wardrobe_score}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-[#6B7280] uppercase">Score</p>
-                      <p className="text-xs font-bold text-[#1A1A2E]">Readiness</p>
-                    </div>
-                  </div>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                </div>
-                <Link href="/wardrobe" className="btn-primary py-3 text-sm">
-                  Full Analysis <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            ) : (
-              <Link href="/wardrobe" className="btn-secondary w-full block text-center text-sm">Analyze Collection</Link>
-            )}
+          {/* Wardrobe Intelligence Card */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E4F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(124,58,237,0.08)" }}>
+            <p style={{ fontSize: "0.75rem", fontWeight: "600", letterSpacing: "0.08em", textTransform: "uppercase", color: "#9CA3AF", marginBottom: "0.75rem" }}>⚡ WARDROBE INTELLIGENCE</p>
+            <p style={{ color: "#6B7280", fontSize: "0.875rem", marginBottom: "1rem" }}>Upload your clothes to get AI analysis and outfit recommendations from your own wardrobe.</p>
+            <button
+              onClick={() => (window.location.href = "/wardrobe")}
+              style={{ width: "100%", padding: "0.75rem", background: "linear-gradient(135deg, #7C3AED, #EC4899)", color: "white", border: "none", borderRadius: "12px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}
+            >
+              Go to Wardrobe →
+            </button>
           </div>
         </div>
       </div>
+      <style jsx global>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @media (max-width: 768px) {
+          .dashboard-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
