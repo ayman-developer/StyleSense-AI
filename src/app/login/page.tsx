@@ -14,7 +14,6 @@ export default function LoginPage() {
   useEffect(() => {
     console.log("Login Page: Initializing auth check...");
     
-    // Hard timeout — show login button after 3 seconds NO MATTER WHAT
     const timer = setTimeout(() => {
       console.log("Login Page: 3s timeout reached, forcing ready state");
       setReady(true)
@@ -26,8 +25,7 @@ export default function LoginPage() {
       if (user) {
         try {
           console.log("Login Page: Existing session found, performing background sync...");
-          // Ensure cookie is set even for auto-login to prevent middleware loops
-          await fetch('/api/auth/sync', {
+          const res = await fetch('/api/auth/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -37,10 +35,17 @@ export default function LoginPage() {
               avatar_url: user.photoURL,
             }),
           });
-          console.log("Login Page: Sync complete, navigating to dashboard");
-          router.replace('/dashboard')
+          
+          if (res.ok) {
+            console.log("Login Page: Sync complete, navigating to dashboard");
+            router.replace('/dashboard')
+          } else {
+            const data = await res.json();
+            console.error("Login Page: Auto-sync API error:", data.error);
+            setReady(true);
+          }
         } catch (syncErr) {
-          console.error("Login Page: Auto-sync failed:", syncErr);
+          console.error("Login Page: Auto-sync network error:", syncErr);
           setReady(true);
         }
       } else {
@@ -81,7 +86,11 @@ export default function LoginPage() {
         }),
       })
 
-      if (!syncRes.ok) throw new Error("Sync API failed");
+      const data = await syncRes.json();
+
+      if (!syncRes.ok) {
+        throw new Error(data.error || "Sync API failed");
+      }
 
       console.log("Login Page: User synced, redirecting...");
       router.replace('/dashboard')
@@ -92,7 +101,6 @@ export default function LoginPage() {
     }
   }
 
-  // Show spinner while initializing (max 3 seconds)
   if (!ready) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
@@ -102,7 +110,6 @@ export default function LoginPage() {
     )
   }
 
-  // Show login UI after ready
   return (
     <div className="flex items-center justify-center min-h-screen bg-black px-4">
       <div className="bg-zinc-900 rounded-2xl p-8 w-full max-w-sm text-center shadow-xl border border-zinc-800 animate-in fade-in zoom-in duration-500">
@@ -110,7 +117,10 @@ export default function LoginPage() {
         <p className="text-gray-400 mb-6 text-sm">Your Personal AI Stylist</p>
         
         {error && (
-          <p className="text-red-400 text-xs mb-4 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{error}</p>
+          <div className="mb-4 bg-red-950/50 border border-red-900/50 rounded-lg p-3">
+            <p className="text-red-400 text-xs font-medium mb-1">Database Sync Error</p>
+            <p className="text-red-300 text-[10px] opacity-80">{error}</p>
+          </div>
         )}
         
         <button
