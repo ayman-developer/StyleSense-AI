@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Plus, Loader2 } from "lucide-react";
-
+import Image from "next/image";
 
 type WardrobeItem = {
   id: string;
@@ -28,13 +28,7 @@ export default function WardrobePage() {
   const [season, setSeason] = useState("All");
   const [occasion, setOccasion] = useState("Casual");
 
-  useEffect(() => {
-    if (user?.uid) {
-      fetchItems();
-    }
-  }, [user]);
-
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
     setError(null);
@@ -49,7 +43,11 @@ export default function WardrobePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,11 +204,12 @@ export default function WardrobePage() {
               {filteredItems.map(item => (
                 <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group">
                   <div className="relative aspect-[3/4] w-full">
-                    {/* Using a regular img tag to avoid domain configuration issues with Next.js Image component */}
-                    <img 
+                    <Image 
                       src={item.image_url} 
                       alt={item.category} 
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                      sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
                       <p className="font-medium text-white">{item.color} {item.category}</p>

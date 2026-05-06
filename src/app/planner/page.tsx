@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Calendar as CalendarIcon, Plus, Loader2, Plane } from "lucide-react";
 
@@ -16,20 +16,13 @@ export default function PlannerPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [date, setDate] = useState("");
   const [occasion, setOccasion] = useState("");
   const [notes, setNotes] = useState("");
 
-  useEffect(() => {
-    if (user?.uid) {
-      fetchPlans();
-    }
-  }, [user]);
-
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchPlans = async () => {
+  const fetchPlans = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
     setError(null);
@@ -44,7 +37,11 @@ export default function PlannerPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    fetchPlans();
+  }, [fetchPlans]);
 
   const handleAddPlan = async (e: React.FormEvent) => {
     e.preventDefault();

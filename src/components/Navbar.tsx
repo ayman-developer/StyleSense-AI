@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Home, Shirt, Calendar, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
+import Image from "next/image";
 
 export default function Navbar() {
   const { user } = useAuth();
@@ -50,7 +51,9 @@ export default function Navbar() {
         </div>
         <div className="flex items-center gap-4">
           {user.photoURL && (
-            <img src={user.photoURL} alt="User avatar" className="w-8 h-8 rounded-full border border-zinc-700" />
+            <div className="relative w-8 h-8 rounded-full border border-zinc-700 overflow-hidden">
+              <Image src={user.photoURL} alt="User avatar" fill className="object-cover" />
+            </div>
           )}
           <Button variant="ghost" className="text-zinc-400 hover:text-white" onClick={handleSignOut}>
             <LogOut className="w-5 h-5 md:mr-2" />

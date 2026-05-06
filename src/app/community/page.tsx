@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Heart, MessageCircle, Image as ImageIcon, Loader2 } from "lucide-react";
+import Image from "next/image";
 
 type Post = {
   id: string;
@@ -22,6 +23,7 @@ export default function CommunityPage() {
   const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // New post state
   const [file, setFile] = useState<File | null>(null);
@@ -30,13 +32,7 @@ export default function CommunityPage() {
   const [weather, setWeather] = useState("Sunny");
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    fetchPosts();
-  }, []);
-
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -50,7 +46,11 @@ export default function CommunityPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   const handlePost = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,13 +76,12 @@ export default function CommunityPage() {
           caption
         }),
       });
-      const newPost = await res.json();
       
-      // Opt UI update
-      fetchPosts();
-      
-      setFile(null);
-      setCaption("");
+      if (res.ok) {
+        fetchPosts();
+        setFile(null);
+        setCaption("");
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -160,9 +159,14 @@ export default function CommunityPage() {
             <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl max-w-2xl mx-auto">
               {/* Header */}
               <div className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden">
+                <div className="relative w-10 h-10 rounded-full bg-zinc-800 overflow-hidden">
                   {post.users?.avatar_url ? (
-                    <img src={post.users.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                    <Image 
+                      src={post.users.avatar_url} 
+                      alt="avatar" 
+                      fill
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-purple-600 text-white font-bold">
                       {post.users?.name?.[0] || "?"}
@@ -179,7 +183,13 @@ export default function CommunityPage() {
 
               {/* Image */}
               <div className="relative aspect-square w-full bg-black">
-                <img src={post.image_url} alt="OOTD" className="w-full h-full object-cover" />
+                <Image 
+                  src={post.image_url} 
+                  alt="OOTD" 
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 672px) 100vw, 672px"
+                />
               </div>
 
               {/* Actions & Caption */}
