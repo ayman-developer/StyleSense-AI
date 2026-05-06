@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+-- Disable RLS so server-side API routes can insert/update freely
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 
 -- Wardrobe items table
 CREATE TABLE IF NOT EXISTS wardrobe_items (
