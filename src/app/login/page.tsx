@@ -1,26 +1,52 @@
 "use client";
 
-import { signInWithRedirect, getRedirectResult } from "firebase/auth";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth, googleProvider } from "@/lib/firebase";
-import { supabase } from "@/lib/supabase";
+import {
+  signInWithRedirect,
+  getRedirectResult,
+  onAuthStateChanged
+} from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { LogIn, Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Handle redirect result on mount
+    // 1. Handle redirect result after Google login
     getRedirectResult(auth)
       .then(async (result) => {
         if (result?.user) {
-          await syncUser(result.user);
-          router.push("/dashboard");
+          const syncRes = await fetch("/api/auth/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              firebase_uid: result.user.uid,
+              name: result.user.displayName,
+              email: result.user.email,
+              avatar_url: result.user.photoURL,
+            }),
+          });
+          
+          if (syncRes.ok) {
+            router.push("/dashboard");
+          } else {
+            console.error("Sync failed");
+            setLoading(false);
+          }
         } else {
-          setLoading(false);
+          // 2. If no redirect result, check if already logged in
+          const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+              router.push("/dashboard");
+            } else {
+              setLoading(false);
+            }
+          });
+          return () => unsubscribe();
         }
       })
       .catch((error) => {
@@ -29,30 +55,13 @@ export default function LoginPage() {
       });
   }, [router]);
 
-  const syncUser = async (user: any) => {
-    try {
-      const { error } = await supabase.from('users').upsert({
-        firebase_uid: user.uid,
-        email: user.email,
-        name: user.displayName,
-        avatar_url: user.photoURL,
-        created_at: new Date().toISOString()
-      }, { onConflict: 'firebase_uid' });
-      
-      if (error) {
-        throw new Error(`Supabase sync failed: ${error.message}`);
-      }
-    } catch (error) {
-      console.error("Error syncing user to Supabase:", error);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
+  const handleGoogleLogin = async () => {
     setLoading(true);
     try {
       await signInWithRedirect(auth, googleProvider);
+      // Redirect happens automatically after page reload
     } catch (error) {
-      console.error("Sign in error:", error);
+      console.error("Login error:", error);
       setLoading(false);
     }
   };
@@ -66,7 +75,7 @@ export default function LoginPage() {
         <p className="text-zinc-400">Sign in to your AI stylist</p>
         
         <Button 
-          onClick={handleGoogleSignIn}
+          onClick={handleGoogleLogin}
           disabled={loading}
           className="w-full bg-white text-black hover:bg-zinc-200 transition-colors py-6 text-lg font-semibold"
         >
