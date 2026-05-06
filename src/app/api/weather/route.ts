@@ -11,11 +11,15 @@ export async function GET(request: Request) {
 
   const apiKey = process.env.OPENWEATHERMAP_API_KEY;
   if (!apiKey) {
-    // Return dummy data if no API key
+    // Return normalized fallback data if no API key
     return NextResponse.json({
-      main: { temp: 22, humidity: 45 },
-      weather: [{ main: "Clear", description: "clear sky" }],
-      wind: { speed: 3.5 }
+      city: "Your City",
+      temp: 24,
+      feels_like: 26,
+      condition: "clear sky",
+      humidity: 50,
+      wind: 12,
+      icon: "01d",
     });
   }
 
@@ -24,8 +28,23 @@ export async function GET(request: Request) {
       `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`
     );
     const data = await res.json();
-    return NextResponse.json(data);
+
+    if (data.cod !== 200) {
+      return NextResponse.json({ error: data.message || "Weather API error" }, { status: 400 });
+    }
+
+    // Return normalized format consumed by dashboard + outfit AI
+    return NextResponse.json({
+      city: data.name,
+      temp: Math.round(data.main.temp),
+      feels_like: Math.round(data.main.feels_like),
+      condition: data.weather?.[0]?.description || "clear",
+      humidity: data.main.humidity,
+      wind: Math.round((data.wind?.speed || 0) * 3.6), // m/s → km/h
+      icon: data.weather?.[0]?.icon || "01d",
+    });
   } catch (error) {
+    console.error("Weather fetch error:", error);
     return NextResponse.json({ error: "Failed to fetch weather" }, { status: 500 });
   }
 }
