@@ -97,7 +97,7 @@ export default function LoginPage() {
         </Button>
 
         <p className="text-xs text-zinc-500 pt-4">
-          By continuing, you agree to StyleSense AI's Terms of Service and Privacy Policy.
+          By continuing, you agree to StyleSense AI&apos;s Terms of Service and Privacy Policy.
         </p>
       </div>
     </div>
