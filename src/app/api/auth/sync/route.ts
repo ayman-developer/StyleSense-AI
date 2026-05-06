@@ -10,54 +10,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing firebase_uid' }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const supabaseKey = serviceRoleKey || anonKey;
-
-    // Debug: log which key is being used (remove after fixing)
-    console.log('[Sync API] Using key type:', serviceRoleKey ? 'service_role' : 'anon');
-    console.log('[Sync API] Supabase URL:', supabaseUrl ? 'set' : 'MISSING');
-
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'Supabase configuration missing on server' }, { status: 500 });
-    }
-
-    // Create admin client inside the handler to ensure env vars are available
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      }
-    });
-
-    // Sync to Supabase (service role key bypasses RLS)
-    const { error } = await supabaseAdmin.from('users').upsert({
-      firebase_uid,
-      name,
-      email,
-      avatar_url,
-    }, { onConflict: 'firebase_uid' });
-
-    if (error) {
-      console.error('[Sync API] Supabase upsert error:', error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // Set auth cookie for middleware route protection
+    // ✅ ALWAYS set the auth cookie first — this is what middleware needs
+    // Do this BEFORE Supabase sync so login never fails due to DB issues
     cookies().set('firebase-token', firebase_uid, {
       path: '/',
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7 // 1 week
+      maxAge: 60 * 60 * 24 * 7, // 1 week
     });
 
-    console.log('[Sync API] User synced successfully:', firebase_uid);
+    // 🔄 Attempt Supabase sync (non-blocking — failure won't stop login)
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const supabaseKey = serviceRoleKey || anonKey;
+
+      console.log('[Sync API] Key type:', serviceRoleKey ? 'service_role ✅' : 'anon ⚠️');
+
+      if (supabaseUrl && supabaseKey) {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
+          auth: { autoRefreshToken: false, persistSession: false }
+        });
+
+        const { error } = await supabaseAdmin.from('users').upsert(
+          { firebase_uid, name, email, avatar_url },
+          { onConflict: 'firebase_uid' }
+        );
+
+        if (error) {
+          // Log but don't block — user can still login
+          console.error('[Sync API] Supabase upsert failed (non-fatal):', error.message);
+        } else {
+          console.log('[Sync API] Supabase sync successful ✅');
+        }
+      }
+    } catch (dbError: any) {
+      // Database errors are non-fatal — user can still use the app
+      console.error('[Sync API] Database sync failed (non-fatal):', dbError.message);
+    }
+
+    // ✅ Always return success so login can proceed
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
-    console.error('[Sync API] Unexpected error:', error);
-    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 });
+    console.error('[Sync API] Fatal error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
