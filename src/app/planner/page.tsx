@@ -27,13 +27,20 @@ export default function PlannerPage() {
     }
   }, [user]);
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchPlans = async () => {
+    if (!user?.uid) return;
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/planner?userId=${user?.uid}`);
+      const res = await fetch(`/api/planner?userId=${user.uid}`);
+      if (!res.ok) throw new Error("Failed to fetch plans");
       const data = await res.json();
-      setPlans(data || []);
-    } catch (e) {
+      setPlans(Array.isArray(data) ? data : []);
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -132,6 +139,11 @@ export default function PlannerPage() {
         {/* Timeline */}
         <div className="md:col-span-2 space-y-4">
           <h2 className="text-xl font-semibold mb-4">Upcoming Events</h2>
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-500 mb-6 text-center">
+              {error}
+            </div>
+          )}
           {loading ? (
             <div className="flex justify-center items-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-purple-500" />

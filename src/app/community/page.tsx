@@ -34,13 +34,19 @@ export default function CommunityPage() {
     fetchPosts();
   }, []);
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchPosts = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/community");
+      if (!res.ok) throw new Error("Failed to fetch community posts");
       const data = await res.json();
-      setPosts(data || []);
-    } catch (e) {
+      setPosts(Array.isArray(data) ? data : []);
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -139,6 +145,12 @@ export default function CommunityPage() {
 
       {/* Feed */}
       <div className="space-y-8">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-500 mb-6 text-center">
+            {error}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-purple-500" /></div>
         ) : posts.length === 0 ? (

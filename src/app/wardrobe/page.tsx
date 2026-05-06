@@ -18,6 +18,7 @@ export default function WardrobePage() {
   const { user } = useAuth();
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState("All");
 
@@ -34,12 +35,17 @@ export default function WardrobePage() {
   }, [user]);
 
   const fetchItems = async () => {
+    if (!user?.uid) return;
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/wardrobe?userId=${user?.uid}`);
+      const res = await fetch(`/api/wardrobe?userId=${user.uid}`);
+      if (!res.ok) throw new Error("Failed to fetch wardrobe data");
       const data = await res.json();
-      setItems(data || []);
-    } catch (e) {
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -180,6 +186,12 @@ export default function WardrobePage() {
               </button>
             ))}
           </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-500 mb-6">
+              {error}
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center items-center h-64">

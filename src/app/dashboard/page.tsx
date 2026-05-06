@@ -11,42 +11,60 @@ export default function Dashboard() {
   const [occasion, setOccasion] = useState("");
   const [suggestion, setSuggestion] = useState<any>(null);
   const [loadingOutfit, setLoadingOutfit] = useState(false);
-  const [feedbackSent, setFeedbackSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const occasions = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival"];
-
-  useEffect(() => {
-    // Fetch location and weather
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          try {
-            const res = await fetch(`/api/weather?lat=${latitude}&lon=${longitude}`);
-            const data = await res.json();
-            setWeather({
-              temp: data.main?.temp || 22,
-              humidity: data.main?.humidity || 45,
-              main: data.weather?.[0]?.main || "Clear",
-              desc: data.weather?.[0]?.description || "clear sky",
-              wind: data.wind?.speed || 3.5
-            });
-          } catch (e) {
-            console.error("Failed to fetch weather");
-          } finally {
-            setLoadingWeather(false);
-          }
-        },
-        () => {
-          // fallback weather
-          setWeather({ temp: 24, humidity: 50, main: "Clear", desc: "sunny", wind: 2 });
-          setLoadingWeather(false);
-        }
-      );
-    } else {
+  const fetchWeather = async (lat: number, lon: number) => {
+    setLoadingWeather(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+      if (!res.ok) throw new Error("Failed to fetch weather data");
+      const data = await res.json();
+      setWeather({
+        temp: data.main?.temp || 22,
+        humidity: data.main?.humidity || 45,
+        main: data.weather?.[0]?.main || "Clear",
+        desc: data.weather?.[0]?.description || "clear sky",
+        wind: data.wind?.speed || 3.5
+      });
+    } catch (e: any) {
+      console.error(e);
+      setError("Weather data unavailable");
+      // fallback
+      setWeather({ temp: 24, humidity: 50, main: "Clear", desc: "sunny", wind: 2 });
+    } finally {
       setLoadingWeather(false);
     }
+  };
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation not supported");
+      return;
+    }
+
+    setLoadingWeather(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        fetchWeather(position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        console.error('Location denied:', error);
+        setError("Location access denied");
+        // fallback weather
+        setWeather({ temp: 24, humidity: 50, main: "Clear", desc: "sunny", wind: 2 });
+        setLoadingWeather(false);
+      }
+    );
+  };
+
+  useEffect(() => {
+    // We don't call geolocation on mount anymore to avoid permission suppression
+    setLoadingWeather(false);
   }, []);
+
+  const [feedbackSent, setFeedbackSent] = useState(false);
+  const occasions = ["Casual", "Office", "Formal", "Party", "Date Night", "Gym", "Travel", "Festival"];
 
   const generateOutfit = async () => {
     if (!occasion || !weather) return;
@@ -131,9 +149,24 @@ export default function Dashboard() {
                 <span className="flex items-center gap-1"><CloudRain className="w-4 h-4"/> {weather.humidity}%</span>
                 <span className="flex items-center gap-1"><Wind className="w-4 h-4"/> {weather.wind}m/s</span>
               </div>
+              <button 
+                onClick={handleGetLocation}
+                className="text-xs text-purple-400 hover:text-purple-300 transition-colors mt-2"
+              >
+                Update Location
+              </button>
             </div>
           ) : (
-            <p className="text-zinc-400">Weather unavailable.</p>
+            <div className="flex flex-col items-center gap-4 py-4">
+              <p className="text-zinc-400 text-sm text-center">Weather is based on your location.</p>
+              <button 
+                onClick={handleGetLocation}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors border border-zinc-700"
+              >
+                Get Weather for My Location
+              </button>
+              {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+            </div>
           )}
         </div>
 
