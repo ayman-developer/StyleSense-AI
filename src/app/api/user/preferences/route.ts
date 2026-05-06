@@ -22,14 +22,24 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { userId, stylePersonality, favoriteColors, fitPreference, budgetPreference } = await request.json();
+    const body = await request.json();
+    const { userId, stylePersonality, favoriteColors, fitPreference, budgetPreference, gender } = body;
+
+    // Build update object dynamically to only update provided fields
+    const updateObj: any = {
+      user_id: userId,
+      updated_at: new Date().toISOString()
+    };
+
+    if (stylePersonality !== undefined) updateObj.style_personality = stylePersonality;
+    if (favoriteColors !== undefined) updateObj.favorite_colors = favoriteColors;
+    if (fitPreference !== undefined) updateObj.fit_preference = fitPreference;
+    if (budgetPreference !== undefined) updateObj.budget_preference = budgetPreference;
+    if (gender !== undefined) updateObj.gender = gender;
+
     const { error } = await supabaseAdmin
       .from("user_preferences")
-      .upsert({
-        user_id: userId, style_personality: stylePersonality,
-        favorite_colors: favoriteColors, fit_preference: fitPreference,
-        budget_preference: budgetPreference, updated_at: new Date().toISOString()
-      }, { onConflict: "user_id" });
+      .upsert(updateObj, { onConflict: "user_id" });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true });

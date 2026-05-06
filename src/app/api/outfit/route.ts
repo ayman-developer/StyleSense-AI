@@ -5,36 +5,58 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(request: Request) {
   try {
-    const { weather, occasion } = await request.json();
+    const { weather, occasion, gender = 'male' } = await request.json();
 
     if (!weather || !occasion) {
       return NextResponse.json({ error: "weather and occasion are required" }, { status: 400 });
     }
 
-    const prompt = `You are a professional fashion stylist AI.
+    const prompt = `
+You are a professional ${gender === 'female' ? "women's" : "men's"} fashion stylist AI in India.
 
-Current weather in ${weather.city || "the user's city"}:
-- Temperature: ${weather.temp}°C (feels like ${weather.feels_like || weather.temp}°C)
+LOCATION: ${weather.city}, ${weather.country}
+CURRENT WEATHER:
+- Temperature: ${weather.temp}°C (feels like ${weather.feels_like}°C)
 - Condition: ${weather.condition}
 - Humidity: ${weather.humidity}%
 - Wind: ${weather.wind} km/h
 
-Occasion: ${occasion}
+OCCASION: ${occasion}
+GENDER: ${gender}
 
-Suggest a complete, specific, stylish outfit suitable for this weather and occasion.
-Be specific about clothing items (include fabric, style, color, and fit details).
-Return ONLY a valid JSON object with NO extra text, NO markdown fences:
+Suggest a complete, stylish ${gender} outfit perfect for this weather and occasion in India.
+Consider Indian fashion, Indian climate, and Indian occasions.
+Be specific about clothing items, fabrics, colors, and fit.
 
+Return ONLY valid JSON, no markdown, no explanation:
+
+${gender === 'female' ? `
 {
-  "top": "specific top description",
-  "bottom": "specific bottom description",
-  "footwear": "specific footwear description",
-  "accessory": "specific accessory description",
-  "outerwear": "specific outerwear or null if not needed",
-  "colors": "color palette recommendation",
+  "outfit": "full outfit description (saree/kurta/dress/top+bottom etc.)",
+  "footwear": "specific footwear (heels/flats/sandals/juttis)",
+  "bag": "bag type and color (clutch/tote/handbag)",
+  "jewellery": "jewellery suggestions (earrings/necklace/bangles)",
+  "dupatta_scarf": "if applicable or null",
+  "makeup": "makeup tone suggestion (light/medium/bold)",
+  "colors": "color palette",
   "tip": "one key styling tip",
-  "avoid": "one thing to avoid wearing in this weather"
-}`;
+  "avoid": "what to avoid in this weather",
+  "fabric_recommendation": "best fabric for this weather"
+}
+` : `
+{
+  "top": "specific top (shirt/tee/kurta/polo)",
+  "bottom": "specific bottom (trouser/jeans/chino/dhoti)",
+  "footwear": "specific footwear (sneakers/loafers/formals/chappals)",
+  "accessory": "watch/belt/cap/wallet",
+  "outerwear": "jacket/blazer/hoodie or null",
+  "colors": "color palette",
+  "tip": "one key styling tip",
+  "avoid": "what to avoid in this weather",
+  "fabric_recommendation": "best fabric for this weather"
+}
+`}
+`;
 
     const completion = await groq.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
