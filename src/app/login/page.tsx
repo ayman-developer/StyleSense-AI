@@ -5,34 +5,52 @@ import { useRouter } from "next/navigation";
 import { auth, googleProvider } from "@/lib/firebase";
 import {
   signInWithPopup,
-  onAuthStateChanged
+  onAuthStateChanged,
+  GoogleAuthProvider
 } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { LogIn, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
+  const [initializing, setInitializing] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if already logged in
+    // Timeout safety — if Firebase doesn't respond in 4 seconds, show login UI
+    const timeout = setTimeout(() => {
+      console.warn("Firebase Auth initialization timed out. Showing login UI.");
+      setInitializing(false);
+    }, 4000);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timeout);
       if (user) {
         router.push("/dashboard");
       } else {
-        setChecking(false);
+        setInitializing(false); // Show login button
       }
+    }, (err) => {
+      console.error("Auth state listener error:", err);
+      clearTimeout(timeout);
+      setInitializing(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [router]);
 
   const handleGoogleLogin = async () => {
     setSigningIn(true);
     setError(null);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const result = await signInWithPopup(auth, provider);
+      
       if (result?.user) {
         const syncRes = await fetch("/api/auth/sync", {
           method: "POST",
@@ -48,17 +66,17 @@ export default function LoginPage() {
         if (syncRes.ok) {
           router.push("/dashboard");
         } else {
-          throw new Error("Failed to sync account");
+          throw new Error("Failed to sync account with StyleSense AI");
         }
       }
     } catch (err: any) {
-      console.error("Login error:", err);
+      console.error("Google login error:", err);
       setError(err.message || "Login failed. Please try again.");
       setSigningIn(false);
     }
   };
 
-  if (checking) {
+  if (initializing) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
         <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
@@ -93,7 +111,7 @@ export default function LoginPage() {
           ) : (
             <LogIn className="mr-2 h-5 w-5" />
           )}
-          {signingIn ? "Please wait..." : "Continue with Google"}
+          {signingIn ? "Opening Google..." : "Continue with Google"}
         </Button>
 
         <p className="text-xs text-zinc-500 pt-4">
