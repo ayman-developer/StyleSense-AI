@@ -1,25 +1,19 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
-    }
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("outfit_plans")
       .select("*")
       .eq("user_id", userId)
       .order("planned_date", { ascending: true });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data ?? []);
   } catch (error) {
     return NextResponse.json([], { status: 500 });
@@ -30,24 +24,28 @@ export async function POST(request: Request) {
   try {
     const { userId, plannedDate, occasion, outfitItems, notes } = await request.json();
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("outfit_plans")
-      .insert([{
-        user_id: userId,
-        planned_date: plannedDate,
-        occasion,
-        outfit_items: outfitItems,
-        notes
-      }])
-      .select()
-      .single();
+      .insert([{ user_id: userId, planned_date: plannedDate, occasion, outfit_items: outfitItems, notes }])
+      .select().single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+    const { error } = await supabaseAdmin.from("outfit_plans").delete().eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 }

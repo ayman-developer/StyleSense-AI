@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { Plus, Loader2 } from "lucide-react";
+import { Upload, Trash2, Loader2, Plus, X, Filter } from "lucide-react";
 import Image from "next/image";
 
 type WardrobeItem = {
@@ -12,216 +12,260 @@ type WardrobeItem = {
   color: string;
   season: string;
   occasion_tags: string[];
+  times_worn: number;
 };
+
+const CATEGORIES = ["All", "Top", "Bottom", "Footwear", "Accessory", "Outerwear"];
+const SEASONS = ["Summer", "Winter", "Monsoon", "All Season"];
+const OCCASIONS = ["Casual", "Office", "Formal", "Party", "Gym", "Travel"];
 
 export default function WardrobePage() {
   const { user } = useAuth();
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState("All");
+  const [uploading, setUploading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [file, setFile] = useState<File | null>(null);
+  // Upload form state
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [category, setCategory] = useState("Top");
-  const [color, setColor] = useState("Black");
-  const [season, setSeason] = useState("All");
-  const [occasion, setOccasion] = useState("Casual");
+  const [color, setColor] = useState("");
+  const [season, setSeason] = useState("All Season");
+  const [selectedOccasions, setSelectedOccasions] = useState<string[]>([]);
 
   const fetchItems = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
-    setError(null);
     try {
       const res = await fetch(`/api/wardrobe?userId=${user.uid}`);
-      if (!res.ok) throw new Error("Failed to fetch wardrobe data");
       const data = await res.json();
       setItems(Array.isArray(data) ? data : []);
-    } catch (e: any) {
+    } catch (e) {
       console.error(e);
-      setError(e.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
   }, [user?.uid]);
 
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setShowUpload(true);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!file || !user?.uid) return;
-    setUploading(true);
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) handleFileSelect(file);
+  };
 
+  const toggleOccasion = (o: string) => {
+    setSelectedOccasions(prev => prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o]);
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !user?.uid) return;
+    setUploading(true);
     try {
-      // 1. Upload to Cloudinary
       const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      formData.append("file", selectedFile);
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
       const { url, public_id } = await uploadRes.json();
 
-      // 2. Save to Supabase
-      const newItem = {
-        user_id: user.uid,
-        image_url: url,
-        cloudinary_public_id: public_id,
-        category,
-        color,
-        season,
-        occasion_tags: [occasion],
-      };
-
-      const dbRes = await fetch("/api/wardrobe", {
+      await fetch("/api/wardrobe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newItem),
+        body: JSON.stringify({
+          user_id: user.uid, image_url: url, cloudinary_public_id: public_id,
+          category, color, season, occasion_tags: selectedOccasions,
+        }),
       });
 
-      const savedItem = await dbRes.json();
-      setItems([savedItem, ...items]);
-      setFile(null); // reset
+      setShowUpload(false);
+      setPreviewUrl(null);
+      setSelectedFile(null);
+      setColor("");
+      setSelectedOccasions([]);
+      fetchItems();
     } catch (e) {
-      console.error("Upload error", e);
+      console.error(e);
     } finally {
       setUploading(false);
     }
   };
 
-  const filteredItems = filter === "All" ? items : items.filter((i) => i.category === filter);
-  const categories = ["All", "Top", "Bottom", "Outerwear", "Shoes", "Accessories"];
+  const handleDelete = async (id: string) => {
+    if (!confirm("Remove this item from your wardrobe?")) return;
+    try {
+      await fetch(`/api/wardrobe?id=${id}`, { method: "DELETE" });
+      setItems(prev => prev.filter(i => i.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const filtered = filter === "All" ? items : items.filter(i => i.category === filter);
+
+  const categoryColors: Record<string, string> = {
+    Top: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    Bottom: "bg-green-500/20 text-green-400 border-green-500/30",
+    Footwear: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    Accessory: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    Outerwear: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2">My Wardrobe</h1>
-          <p className="text-zinc-400 text-lg">Manage your digital closet.</p>
+          <h1 className="text-4xl font-bold tracking-tight mb-1">My Wardrobe</h1>
+          <p className="text-zinc-400">{items.length} items in your collection</p>
         </div>
-      </header>
+        <button
+          onClick={() => { setShowUpload(true); setPreviewUrl(null); setSelectedFile(null); }}
+          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl font-semibold text-white hover:from-purple-400 hover:to-pink-500 transition-all shadow-[0_0_20px_rgba(168,85,247,0.3)]"
+        >
+          <Plus className="w-5 h-5" /> Add Item
+        </button>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        {/* Upload Form */}
-        <div className="md:col-span-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl h-fit">
-          <h2 className="text-xl font-semibold mb-4">Add Item</h2>
-          <form onSubmit={handleUpload} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Photo</label>
-              <input 
-                type="file" 
-                accept="image/*" 
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="block w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-zinc-800 file:text-white hover:file:bg-zinc-700"
-                required
-              />
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {CATEGORIES.slice(1).map(cat => {
+          const count = items.filter(i => i.category === cat).length;
+          return (
+            <div key={cat} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center">
+              <div className="text-2xl font-bold">{count}</div>
+              <div className="text-xs text-zinc-500 mt-1">{cat}s</div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white">
-                <option>Top</option>
-                <option>Bottom</option>
-                <option>Outerwear</option>
-                <option>Shoes</option>
-                <option>Accessories</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Color</label>
-              <input 
-                type="text" 
-                value={color} 
-                onChange={(e) => setColor(e.target.value)} 
-                className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white"
-                placeholder="e.g. Black"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Season</label>
-              <select value={season} onChange={(e) => setSeason(e.target.value)} className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white">
-                <option>All</option>
-                <option>Summer</option>
-                <option>Winter</option>
-                <option>Fall</option>
-                <option>Spring</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Occasion</label>
-              <select value={occasion} onChange={(e) => setOccasion(e.target.value)} className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white">
-                <option>Casual</option>
-                <option>Office</option>
-                <option>Party</option>
-                <option>Formal</option>
-                <option>Gym</option>
-              </select>
-            </div>
-            <button
-              type="submit"
-              disabled={uploading || !file}
-              className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500 text-white"
-            >
-              {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-              {uploading ? "Uploading..." : "Add to Closet"}
-            </button>
-          </form>
-        </div>
+          );
+        })}
+      </div>
 
-        {/* Grid */}
-        <div className="md:col-span-3 space-y-6">
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {categories.map(c => (
-              <button
-                key={c}
-                onClick={() => setFilter(c)}
-                className={`px-4 py-2 rounded-full whitespace-nowrap border text-sm transition-all ${
-                  filter === c ? "bg-white text-black border-white" : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-500"
-                }`}
+      {/* Filter Bar */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <Filter className="w-4 h-4 text-zinc-500" />
+        {CATEGORIES.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setFilter(cat)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${
+              filter === cat
+                ? "bg-white text-black border-white"
+                : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-zinc-500"
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && setShowUpload(false)}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-bold">Add to Wardrobe</h2>
+              <button onClick={() => setShowUpload(false)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            {!previewUrl ? (
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${dragOver ? "border-purple-500 bg-purple-500/10" : "border-zinc-700 hover:border-zinc-500"}`}
               >
-                {c}
-              </button>
-            ))}
-          </div>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-500 mb-6">
-              {error}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center text-zinc-400">
-              No items found. Add some clothes to your wardrobe!
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredItems.map(item => (
-                <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group">
-                  <div className="relative aspect-[3/4] w-full">
-                    <Image 
-                      src={item.image_url} 
-                      alt={item.category} 
-                      fill
-                      className="object-cover transition-transform duration-500 group-hover:scale-110"
-                      sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                      <p className="font-medium text-white">{item.color} {item.category}</p>
-                      <p className="text-xs text-zinc-300">{item.season} • {item.occasion_tags.join(", ")}</p>
+                <Upload className="w-10 h-10 mx-auto mb-3 text-zinc-500" />
+                <p className="text-zinc-400 font-medium">Drop image here or click to upload</p>
+                <p className="text-zinc-600 text-sm mt-1">JPG, PNG, WEBP supported</p>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])} />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-zinc-800">
+                  <Image src={previewUrl} alt="Preview" fill className="object-cover" />
+                  <button onClick={() => { setPreviewUrl(null); setSelectedFile(null); }} className="absolute top-2 right-2 bg-black/60 rounded-full p-1"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1 block">Category *</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)} className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white text-sm">
+                      {CATEGORIES.slice(1).map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1 block">Color</label>
+                    <input value={color} onChange={e => setColor(e.target.value)} placeholder="e.g. Navy Blue" className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white text-sm" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-zinc-500 mb-1 block">Season</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {SEASONS.map(s => (
+                        <button key={s} onClick={() => setSeason(s)} className={`px-3 py-1 rounded-full text-xs border transition-all ${season === s ? "bg-white text-black border-white" : "border-zinc-700 text-zinc-400"}`}>{s}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-zinc-500 mb-1 block">Occasion Tags</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {OCCASIONS.map(o => (
+                        <button key={o} onClick={() => toggleOccasion(o)} className={`px-3 py-1 rounded-full text-xs border transition-all ${selectedOccasions.includes(o) ? "bg-purple-600 text-white border-purple-600" : "border-zinc-700 text-zinc-400"}`}>{o}</button>
+                      ))}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+                <button onClick={handleUpload} disabled={uploading} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+                  {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</> : <><Upload className="w-4 h-4" /> Save to Wardrobe</>}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Grid */}
+      {loading ? (
+        <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-purple-500" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-20 bg-zinc-900 border border-zinc-800 rounded-2xl">
+          <Upload className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
+          <p className="text-zinc-400 font-medium">No {filter === "All" ? "" : filter + "s"} in your wardrobe yet</p>
+          <p className="text-zinc-600 text-sm mt-1">Click &quot;Add Item&quot; to start building your collection</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {filtered.map(item => (
+            <div key={item.id} className="group relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-600 transition-all">
+              <div className="relative aspect-square">
+                <Image src={item.image_url} alt={item.category} fill className="object-cover" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" />
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  className="absolute top-2 right-2 bg-black/70 text-red-400 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="p-2.5 space-y-1.5">
+                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border ${categoryColors[item.category] || "bg-zinc-700 text-zinc-300"}`}>
+                  {item.category}
+                </span>
+                {item.color && <p className="text-xs text-zinc-500 truncate">{item.color}</p>}
+                {item.season && <p className="text-[10px] text-zinc-600">{item.season}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

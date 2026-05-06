@@ -1,42 +1,52 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "placeholder" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(request: Request) {
   try {
     const { messages, userId } = await request.json();
 
-    // In a real app, fetch user wardrobe and preferences from Supabase to provide context
-    let systemContext = `You are an expert AI fashion stylist named StyleSense AI. 
-Provide concise, helpful, and stylish advice.`;
+    let systemContext = `You are StyleSense AI, an expert personal fashion stylist assistant. 
+You help users with outfit advice, styling tips, wardrobe management, and fashion questions.
+Be friendly, concise, and stylish. Give specific, actionable advice.`;
 
     if (userId) {
-      // Optional: Fetch wardrobe
-      const { data: wardrobe } = await supabase.from("wardrobe_items").select("category, color").eq("user_id", userId).limit(20);
+      const { data: wardrobe } = await supabaseAdmin
+        .from("wardrobe_items")
+        .select("category, color, season, occasion_tags")
+        .eq("user_id", userId)
+        .limit(20);
+
       if (wardrobe && wardrobe.length > 0) {
-        systemContext += `\nThe user has these items in their wardrobe: ${wardrobe.map(w => `${w.color} ${w.category}`).join(", ")}.`;
+        systemContext += `\n\nUser's wardrobe: ${wardrobe.map(w => `${w.color || ""} ${w.category}`).join(", ")}.`;
+      }
+
+      const { data: prefs } = await supabaseAdmin
+        .from("user_preferences")
+        .select("style_personality, favorite_colors, fit_preference, budget_preference")
+        .eq("user_id", userId)
+        .single();
+
+      if (prefs) {
+        systemContext += `\nStyle: ${prefs.style_personality || "not set"}. Colors: ${prefs.favorite_colors?.join(", ") || "any"}. Fit: ${prefs.fit_preference || "any"}. Budget: ${prefs.budget_preference || "any"}.`;
       }
     }
 
     const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: systemContext },
-        ...messages
-      ],
+      messages: [{ role: "system", content: systemContext }, ...messages],
       model: "llama-3.3-70b-versatile",
       temperature: 0.7,
       max_tokens: 512,
     });
 
-    const reply = chatCompletion.choices[0]?.message?.content || "I'm sorry, I couldn't process that.";
+    const reply = chatCompletion.choices[0]?.message?.content || "I couldn't process that request. Please try again!";
 
-    // Save to chat_history
     if (userId) {
-      const lastUserMessage = messages[messages.length - 1]?.content;
-      await supabase.from("chat_history").insert([
-        { user_id: userId, role: "user", message: lastUserMessage },
+      const lastUserMsg = messages[messages.length - 1]?.content;
+      await supabaseAdmin.from("chat_history").insert([
+        { user_id: userId, role: "user", message: lastUserMsg },
         { user_id: userId, role: "assistant", message: reply }
       ]);
     }
@@ -44,6 +54,6 @@ Provide concise, helpful, and stylish advice.`;
     return NextResponse.json({ reply });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Failed to generate chat response" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate response" }, { status: 500 });
   }
 }
